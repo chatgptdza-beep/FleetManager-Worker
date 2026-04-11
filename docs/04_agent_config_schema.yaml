@@ -1,0 +1,79 @@
+version: 1
+kind: fleet-agent-config
+metadata:
+  profile_name: linux-browser-node-v1
+  environment: production
+agent:
+  node_id: "node_01JABCDEG"
+  backend_base_url: "https://api.example.internal"
+  enrollment:
+    mode: token
+    token_ref: "secret://fleet/nodes/node_01JABCDEG/enrollment"
+  heartbeat:
+    interval_seconds: 5
+    full_metrics_every: 3
+  runtime:
+    install_root: "/opt/fleet-agent"
+    logs_path: "/opt/fleet-agent/logs"
+    temp_path: "/opt/fleet-agent/runtime"
+    browser_profiles_path: "/opt/fleet-agent/browser-profiles"
+  telemetry:
+    collect_cpu: true
+    collect_memory: true
+    collect_disk: true
+    collect_ping: true
+    collect_browser_count: true
+    redact_sensitive_fields: true
+  commands:
+    poll_interval_seconds: 2
+    max_parallel_commands: 2
+    allowlist:
+      - start_browser
+      - stop_browser
+      - restart_browser
+      - open_session
+      - close_session
+      - bring_to_front
+      - capture_screenshot
+      - fetch_logs
+      - update_agent
+  browser:
+    enabled: true
+    engine: chromium
+    local_debug_only: true
+    max_sessions: 50
+    launch_args:
+      - "--disable-background-networking"
+      - "--disable-dev-shm-usage"
+      - "--no-first-run"
+  network:
+    outbound_timeout_seconds: 10
+    websocket:
+      enabled: true
+      connect_timeout_seconds: 8
+      ping_interval_seconds: 10
+  updates:
+    channel: stable
+    auto_update: false
+    require_signed_package: true
+  security:
+    run_as_user: fleetagent
+    redact_env_vars:
+      - HTTP_PROXY
+      - HTTPS_PROXY
+      - AGENT_TOKEN
+    forbid_shell_passthrough: true
+    forbid_arbitrary_file_write: true
+logging:
+  level: Information
+  rotation:
+    max_file_size_mb: 50
+    max_retained_files: 10
+  export:
+    batch_size: 200
+    flush_interval_seconds: 5
+examples:
+  minimal_runtime_override:
+    agent:
+      heartbeat:
+        interval_seconds: 10

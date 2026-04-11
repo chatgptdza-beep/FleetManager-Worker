@@ -1,0 +1,47 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET
+*.swp
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Secrets & keys
+appsettings.*.json
+!appsettings.agent.template.json
+**/appsettings.Production.json
+**/appsettings.Development.json
+*.pfx
+*.key
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Docker
+.dockerignore
+
+# Test results
+TestResults/
+coverage/
+*.coveragexml

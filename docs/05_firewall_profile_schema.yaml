@@ -1,0 +1,58 @@
+version: 1
+kind: firewall-profile
+metadata:
+  name: minimal-node-v1
+  description: Minimal locked-down profile for managed VPS nodes
+  target_os:
+    - ubuntu-22.04
+    - debian-12
+policy:
+  default_inbound: deny
+  default_outbound: allow
+  inbound_rules:
+    - name: allow_ssh_from_admin_vpn
+      protocol: tcp
+      port: 22
+      source_cidrs:
+        - 10.20.0.0/16
+        - 192.168.50.0/24
+      action: allow
+    - name: allow_agent_health_from_localhost_only
+      protocol: tcp
+      port: 12701
+      source_cidrs:
+        - 127.0.0.1/32
+      action: allow
+  outbound_rules:
+    - name: allow_https_to_backend
+      protocol: tcp
+      port: 443
+      destination_hosts:
+        - api.example.internal
+      action: allow
+    - name: allow_dns
+      protocol: udp
+      port: 53
+      destination_cidrs:
+        - 0.0.0.0/0
+      action: allow
+  local_only_ports:
+    - port: 9222
+      purpose: browser_debug
+    - port: 12701
+      purpose: local_agent_health
+validation:
+  forbid_public_debug_ports: true
+  forbid_wildcard_inbound_allow: true
+  require_explicit_ssh_sources: true
+  require_comment_per_rule: true
+rollout:
+  apply_mode: transactional
+  verify_after_apply: true
+  rollback_on_verify_failure: true
+example_runtime_render:
+  ufw:
+    - "default deny incoming"
+    - "default allow outgoing"
+    - "allow from 10.20.0.0/16 to any port 22 proto tcp"
+    - "allow from 192.168.50.0/24 to any port 22 proto tcp"

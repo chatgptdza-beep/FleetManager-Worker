@@ -1,0 +1,22 @@
+[Unit]
+Description=FleetManager Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fleetmgr
+Group=fleetmgr
+WorkingDirectory=/opt/fleetmanager-agent
+ExecStart=/opt/fleetmanager-agent/FleetManager.Agent
+Restart=always
+RestartSec=5
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=FM_ROOT=/var/lib/fleetmanager
+Environment=FM_BROWSER_BIN=/usr/bin/chromium
+Environment=FM_VIEWER_HOST=127.0.0.1
+Environment=FM_NOVNC_DIR=/usr/share/novnc
+Environment=FM_WEBSOCKIFY_BIN=/usr/bin/websockify
+
+[Install]
+WantedBy=multi-user.target
