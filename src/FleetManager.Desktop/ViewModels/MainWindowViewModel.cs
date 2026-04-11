@@ -553,9 +553,29 @@ public sealed class MainWindowViewModel : ViewModelBase
                     : command.ResultMessage);
             }
 
+            // Automatically update the account status if it's a lifecycle command
+            if (commandType == "StartBrowser")
+            {
+                await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Running", Email = account.Email, Username = account.Username });
+            }
+            else if (commandType == "StopBrowser")
+            {
+                await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Stopped", Email = account.Email, Username = account.Username });
+            }
+
             await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
             StatusMessage = $"{commandType} executed for {account.Email} | {SourceBanner}";
             return;
+        }
+
+        // For queued commands, we might want to enthusiastically update status too
+        if (commandType == "StartBrowser")
+        {
+            await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Waiting", Email = account.Email, Username = account.Username });
+        }
+        else if (commandType == "StopBrowser")
+        {
+            await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Stopping", Email = account.Email, Username = account.Username });
         }
 
         await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
@@ -593,6 +613,26 @@ public sealed class MainWindowViewModel : ViewModelBase
                 {
                     failedAccounts.Add(account.Email);
                     continue;
+                }
+
+                if (commandType == "StartBrowser")
+                {
+                    await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Running", Email = account.Email, Username = account.Username });
+                }
+                else if (commandType == "StopBrowser")
+                {
+                    await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Stopped", Email = account.Email, Username = account.Username });
+                }
+            }
+            else
+            {
+                if (commandType == "StartBrowser")
+                {
+                    await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Waiting", Email = account.Email, Username = account.Username });
+                }
+                else if (commandType == "StopBrowser")
+                {
+                    await _dataService.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest { Status = "Stopping", Email = account.Email, Username = account.Username });
                 }
             }
 

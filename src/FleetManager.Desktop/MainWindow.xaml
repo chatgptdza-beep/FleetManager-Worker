@@ -68,6 +68,52 @@
             </Setter>
         </Style>
 
+        <ContextMenu x:Key="AccountRowContextMenu" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" Foreground="#F8F5F1">
+            <ContextMenu.Template>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="4" Padding="0,8">
+                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                    </Border>
+                </ControlTemplate>
+            </ContextMenu.Template>
+            <ContextMenu.Resources>
+                <Style TargetType="MenuItem">
+                    <Setter Property="Foreground" Value="#F8F5F1" />
+                    <Setter Property="FontSize" Value="14" />
+                    <Setter Property="FontWeight" Value="Medium" />
+                    <Setter Property="Padding" Value="24,10,32,10" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="MenuItem">
+                                <Border x:Name="Bg" Background="Transparent" Padding="{TemplateBinding Padding}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Margin="32,0,0,0" Text="{TemplateBinding InputGestureText}" Foreground="#8FA0AA" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="Bg" Property="Background" Value="#1A2D3C" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ContextMenu.Resources>
+            <TextBlock Text="ACCOUNT CONTEXT MENU" Foreground="#78909C" FontWeight="Bold" FontSize="11" Margin="24,4,24,12" />
+            
+            <MenuItem Header="Start" Click="StartAccount_Click" InputGestureText="Enter" />
+            <MenuItem Header="Edit Account" Click="EditAccount_Click" InputGestureText="F2" />
+            <MenuItem Header="Remote Viewer Browser" Click="RemoteViewer_Click" InputGestureText="Ctrl+R" />
+            <Separator Background="#2C3A43" Margin="0,8,0,8" />
+            <MenuItem Header="Delete Account" Click="DeleteAccount_Click" Foreground="#FF8A8A" InputGestureText="Del" />
+        </ContextMenu>
+
         <Style x:Key="AccountRowStyle" TargetType="DataGridRow">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -86,16 +132,7 @@
             </Style.Triggers>
         </Style>
 
-        <ContextMenu x:Key="AccountRowContextMenu" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="#162532" BorderBrush="#2C3A43" Foreground="#F8F5F1">
-            <MenuItem Header="▶  Start Browser" Click="StartAccount_Click" />
-            <MenuItem Header="⏹  Stop Browser" Click="StopAccount_Click" />
-            <Separator Background="#2C3A43" />
-            <MenuItem Header="🖥  Remote Viewer" Click="RemoteViewer_Click" />
-            <MenuItem Header="📋  View Logs" Click="OpenLogs_Click" />
-            <MenuItem Header="✏  Edit Account" Click="EditAccount_Click" />
-            <Separator Background="#2C3A43" />
-            <MenuItem Header="🗑  Delete Account" Click="DeleteAccount_Click" Foreground="#FFB1B1" />
-        </ContextMenu>
+
     </Window.Resources>
     <Grid>
         <Viewbox Stretch="Uniform">

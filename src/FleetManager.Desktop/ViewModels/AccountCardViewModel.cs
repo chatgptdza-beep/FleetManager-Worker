@@ -76,6 +76,7 @@ public sealed class AccountCardViewModel : ViewModelBase
     public Brush StatusBadgeBackground => Status switch
     {
         "Stable" => UiPalette.SuccessBackground,
+        "Stopped" => UiPalette.SuccessBackground,
         "Running" => UiPalette.InfoBackground,
         "Manual" => UiPalette.CriticalBackground,
         "Paused" => UiPalette.WarningBackground,
@@ -86,6 +87,7 @@ public sealed class AccountCardViewModel : ViewModelBase
     public Brush StatusBadgeForeground => Status switch
     {
         "Stable" => UiPalette.SuccessForeground,
+        "Stopped" => UiPalette.SuccessForeground,
         "Running" => UiPalette.InfoForeground,
         "Manual" => UiPalette.CriticalForeground,
         "Paused" => UiPalette.WarningForeground,

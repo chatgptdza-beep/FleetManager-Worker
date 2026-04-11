@@ -35,8 +35,8 @@
                     </StackPanel>
 
                     <StackPanel Grid.Row="4" Margin="0,16,0,0">
-                        <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="Current Status" />
-                        <ComboBox Height="42" ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}" />
+                        <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="" />
+                        <!-- Status is automated -->
                     </StackPanel>
                     
                     <StackPanel Grid.Row="6" Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">

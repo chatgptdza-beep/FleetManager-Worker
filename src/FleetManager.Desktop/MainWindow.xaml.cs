@@ -84,7 +84,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var editor = new AccountEditorWindow("Add Account", _viewModel.SelectedNode.NodeDisplayName, status: "Running") { Owner = this };
+        var editor = new AccountEditorWindow("Add Account", _viewModel.SelectedNode.NodeDisplayName) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             await RunUiActionAsync(() => _viewModel.CreateAccountAsync(new CreateAccountRequest
@@ -92,7 +92,7 @@ public partial class MainWindow : Window
                 NodeId = _viewModel.SelectedNode.NodeId,
                 Email = editor.Email,
                 Username = editor.Username,
-                Status = editor.Status
+                Status = "Stopped" // Default status
             }));
         }
     }
@@ -204,14 +204,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        var editor = new AccountEditorWindow("Edit Account", account.NodeDisplayName, account.Email, account.Username, account.Status) { Owner = this };
+        var editor = new AccountEditorWindow("Edit Account", account.NodeDisplayName, account.Email, account.Username) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             await RunUiActionAsync(() => _viewModel.UpdateAccountAsync(account.AccountId, new UpdateAccountRequest
             {
                 Email = editor.Email,
                 Username = editor.Username,
-                Status = editor.Status
+                Status = account.Status // Keep existing status
             }));
         }
     }
@@ -224,19 +224,22 @@ public partial class MainWindow : Window
         // Dispatch OpenAssignedSession and wait for the VNC URL
         await RunUiActionAsync(() => _viewModel.OpenRemoteViewerAsync(account));
 
-        // Open the inline noVNC window once the URL is available
+        // Open the URL directly in the user's default browser
         var vncUrl = _viewModel.GetFocusedViewerUrl();
-        if (!string.IsNullOrWhiteSpace(vncUrl) && account.NodeId != Guid.Empty)
+        if (!string.IsNullOrWhiteSpace(vncUrl))
         {
-            var takeoverWindow = new RemoteTakeoverWindow(
-                account.AccountId,
-                account.NodeId,
-                vncUrl,
-                _viewModel.DataService)
+            try
             {
-                Owner = this
-            };
-            takeoverWindow.Show();
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = vncUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Failed to open browser: {ex.Message}", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 
