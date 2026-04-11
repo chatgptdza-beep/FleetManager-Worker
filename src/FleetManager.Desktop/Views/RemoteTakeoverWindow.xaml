@@ -1,0 +1,20 @@
+<Window x:Class="FleetManager.Desktop.Views.RemoteTakeoverWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="Remote Browser Takeover" Height="768" Width="1024" WindowStartupLocation="CenterOwner">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Background="#2C2C2C" Margin="0,0,0,5">
+            <Button x:Name="CompleteTakeoverButton" Content="Resume Automation (Takeover Complete)" Click="CompleteTakeover_Click" 
+                    Margin="10" Padding="10" Background="#4CAF50" Foreground="White" FontWeight="Bold"/>
+            <TextBlock x:Name="UrlTextBlock" VerticalAlignment="Center" Foreground="White" Margin="10,0"/>
+        </StackPanel>
+
+        <wv2:WebView2 x:Name="BrowserWebView" Grid.Row="1" />
+    </Grid>
+</Window>

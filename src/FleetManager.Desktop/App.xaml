@@ -1,0 +1,63 @@
+<Application x:Class="FleetManager.Desktop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Modern Dark Theme Styles -->
+        <Style x:Key="GhostButtonStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#F8F5F1" />
+            <Setter Property="Background" Value="#1A2A35" />
+            <Setter Property="BorderBrush" Value="#2C3A43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="16,0" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
+            <Setter Property="Foreground" Value="#09231F" />
+            <Setter Property="Background" Value="#47C1A8" />
+            <Setter Property="BorderBrush" Value="#47C1A8" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#1A2A35" />
+            <Setter Property="Foreground" Value="#F8F5F1" />
+            <Setter Property="BorderBrush" Value="#2C3A43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="CaretBrush" Value="#47C1A8" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10">
+                            <ScrollViewer x:Name="PART_ContentHost" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBox">
+            <Setter Property="Background" Value="#1A2A35" />
+            <Setter Property="Foreground" Value="#F8F5F1" />
+            <Setter Property="BorderBrush" Value="#2C3A43" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="10,6" />
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="#1A2A35" />
+            <Setter Property="Foreground" Value="#F8F5F1" />
+        </Style>
+    </Application.Resources>
+</Application>

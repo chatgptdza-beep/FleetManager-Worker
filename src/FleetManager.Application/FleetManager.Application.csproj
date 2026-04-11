@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>FleetManager.Application</AssemblyName>
+    <RootNamespace>FleetManager.Application</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FleetManager.Domain\FleetManager.Domain.csproj" />
+    <ProjectReference Include="..\FleetManager.Contracts\FleetManager.Contracts.csproj" />
+  </ItemGroup>
+</Project>

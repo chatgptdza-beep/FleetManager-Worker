@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>FleetManager.Domain</AssemblyName>
+    <RootNamespace>FleetManager.Domain</RootNamespace>
+  </PropertyGroup>
+</Project>

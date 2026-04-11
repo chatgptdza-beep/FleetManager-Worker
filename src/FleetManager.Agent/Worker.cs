@@ -12,7 +12,8 @@ namespace FleetManager.Agent;
 public sealed class Worker(
     ILogger<Worker> logger,
     IHttpClientFactory httpClientFactory,
-    IOptions<AgentOptions> options) : BackgroundService
+    IOptions<AgentOptions> options,
+    LinuxMetricsCollector metrics) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -45,24 +46,47 @@ public sealed class Worker(
 
     private async Task SendHeartbeatAsync(HttpClient client, AgentOptions settings, CancellationToken cancellationToken)
     {
+        var cpu                   = metrics.GetCpuPercent();
+        var (ramPercent, ramUsed) = metrics.GetRamInfo();
+        var (diskPercent, diskUsed) = metrics.GetDiskInfo();
+        var activeSessions        = LinuxMetricsCollector.GetActiveSessionCount();
+        var pingMs                = await MeasurePingAsync(client, cancellationToken);
+
         var heartbeat = new AgentHeartbeatRequest
         {
-            NodeId = settings.NodeId,
-            AgentVersion = settings.AgentVersion,
-            CpuPercent = 0,
-            RamPercent = 0,
-            DiskPercent = 0,
-            RamUsedGb = 0,
-            StorageUsedGb = 0,
-            PingMs = 0,
-            ActiveSessions = 0,
-            ControlPort = settings.ControlPort,
-            ConnectionState = settings.ConnectionState,
+            NodeId                  = settings.NodeId,
+            AgentVersion            = settings.AgentVersion,
+            CpuPercent              = cpu,
+            RamPercent              = ramPercent,
+            DiskPercent             = diskPercent,
+            RamUsedGb               = ramUsed,
+            StorageUsedGb           = diskUsed,
+            PingMs                  = pingMs,
+            ActiveSessions          = activeSessions,
+            ControlPort             = settings.ControlPort,
+            ConnectionState         = settings.ConnectionState,
             ConnectionTimeoutSeconds = settings.ConnectionTimeoutSeconds
         };
 
         using var response = await client.PostAsJsonAsync("/api/agent/heartbeat", heartbeat, cancellationToken);
-        logger.LogInformation("Heartbeat sent with status code: {StatusCode}", response.StatusCode);
+        logger.LogInformation(
+            "Heartbeat sent — CPU:{Cpu}% RAM:{Ram}% Disk:{Disk}% Sessions:{Sessions} Ping:{Ping}ms — HTTP {StatusCode}",
+            cpu, ramPercent, diskPercent, activeSessions, pingMs, response.StatusCode);
+    }
+
+    private static async Task<int> MeasurePingAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var resp = await client.GetAsync("/health", cancellationToken);
+            sw.Stop();
+            return (int)sw.ElapsedMilliseconds;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     private async Task PollAndExecuteCommandAsync(HttpClient client, AgentOptions settings, CancellationToken cancellationToken)
