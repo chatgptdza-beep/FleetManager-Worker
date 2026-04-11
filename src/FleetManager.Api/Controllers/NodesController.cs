@@ -28,6 +28,13 @@ public sealed class NodesController(INodeService nodeService) : ControllerBase
         return CreatedAtAction(nameof(GetByIdAsync), new { nodeId = created.Id }, created);
     }
 
+    [HttpDelete("{nodeId:guid}")]
+    public async Task<ActionResult> DeleteAsync(Guid nodeId, CancellationToken cancellationToken)
+    {
+        var deleted = await nodeService.DeleteNodeAsync(nodeId, cancellationToken);
+        return deleted ? NoContent() : NotFound();
+    }
+
     [HttpGet("{nodeId:guid}/commands/{commandId:guid}")]
     public async Task<ActionResult<NodeCommandStatusResponse>> GetCommandStatusAsync(Guid nodeId, Guid commandId, CancellationToken cancellationToken)
     {

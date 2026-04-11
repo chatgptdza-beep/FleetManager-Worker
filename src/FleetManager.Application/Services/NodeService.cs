@@ -43,6 +43,16 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
         return Map(node);
     }
 
+    public async Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    {
+        var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken);
+        if (node is null) return false;
+
+        await nodeRepository.DeleteAsync(node, cancellationToken);
+        await nodeRepository.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
     public async Task<Guid> DispatchCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default)
     {
         var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken)

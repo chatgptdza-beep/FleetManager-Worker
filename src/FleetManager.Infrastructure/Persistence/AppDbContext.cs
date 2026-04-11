@@ -26,7 +26,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(x => x.Status).HasConversion<string>();
             builder.HasMany(x => x.Accounts)
                 .WithOne(x => x.VpsNode)
-                .HasForeignKey(x => x.VpsNodeId);
+                .HasForeignKey(x => x.VpsNodeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AgentInstallJob>(builder =>
@@ -35,7 +36,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(x => x.JobStatus).HasConversion<string>();
             builder.HasOne(x => x.VpsNode)
                 .WithMany(x => x.InstallJobs)
-                .HasForeignKey(x => x.VpsNodeId);
+                .HasForeignKey(x => x.VpsNodeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<NodeCommand>(builder =>
@@ -45,7 +47,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(x => x.Status).HasConversion<string>();
             builder.HasOne(x => x.VpsNode)
                 .WithMany(x => x.Commands)
-                .HasForeignKey(x => x.VpsNodeId);
+                .HasForeignKey(x => x.VpsNodeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<NodeCapability>(builder =>

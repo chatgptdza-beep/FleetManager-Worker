@@ -22,6 +22,12 @@ internal sealed class InMemoryNodeRepository : INodeRepository
         return Task.CompletedTask;
     }
 
+    public Task DeleteAsync(VpsNode node, CancellationToken cancellationToken = default)
+    {
+        Nodes.Remove(node);
+        return Task.CompletedTask;
+    }
+
     public Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default)
     {
         var node = Nodes.FirstOrDefault(candidate => candidate.Id == command.VpsNodeId);

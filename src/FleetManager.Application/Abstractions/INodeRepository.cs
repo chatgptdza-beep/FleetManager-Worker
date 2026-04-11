@@ -8,6 +8,7 @@ public interface INodeRepository
     Task<VpsNode?> GetByIdAsync(Guid nodeId, CancellationToken cancellationToken = default);
     Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default);
     Task AddAsync(VpsNode node, CancellationToken cancellationToken = default);
+    Task DeleteAsync(VpsNode node, CancellationToken cancellationToken = default);
     Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
