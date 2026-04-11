@@ -2,45 +2,61 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 
 namespace FleetManager.Desktop.Converters;
 
+internal static class BrushCache
+{
+    internal static SolidColorBrush Frozen(string hex)
+    {
+        var brush = (SolidColorBrush)new BrushConverter().ConvertFromString(hex)!;
+        brush.Freeze();
+        return brush;
+    }
+}
+
 public class EqualityToBrushConverter : IValueConverter
 {
+    private static readonly SolidColorBrush ActiveBrush = BrushCache.Frozen("#143A33");
+    private static readonly SolidColorBrush InactiveBrush = BrushCache.Frozen("#162532");
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value == null || parameter == null) return DependencyProperty.UnsetValue;
-        
-        bool isEqual = value.ToString() == parameter.ToString();
-        
-        // Return #143A33 if equal (active), else #162532 (inactive)
-        return isEqual 
-            ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#143A33"))
-            : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#162532"));
+        return value.ToString() == parameter.ToString() ? ActiveBrush : InactiveBrush;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-    {
-        throw new NotImplementedException();
-    }
+        => throw new NotImplementedException();
 }
 
 public class EqualityToBorderBrushConverter : IValueConverter
 {
+    private static readonly SolidColorBrush ActiveBrush = BrushCache.Frozen("#47C1A8");
+    private static readonly SolidColorBrush InactiveBrush = BrushCache.Frozen("#2C3A43");
+
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
         if (value == null || parameter == null) return DependencyProperty.UnsetValue;
-        
-        bool isEqual = value.ToString() == parameter.ToString();
-        
-        // Return #47C1A8 if equal (active), else #2C3A43 (inactive)
-        return isEqual 
-            ? new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#47C1A8"))
-            : new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#2C3A43"));
+        return value.ToString() == parameter.ToString() ? ActiveBrush : InactiveBrush;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
+}
+
+public class EqualityToForegroundConverter : IValueConverter
+{
+    private static readonly SolidColorBrush ActiveBrush = BrushCache.Frozen("#F8F5F1");
+    private static readonly SolidColorBrush InactiveBrush = BrushCache.Frozen("#B9C4CD");
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {
-        throw new NotImplementedException();
+        if (value == null || parameter == null) return DependencyProperty.UnsetValue;
+        return value.ToString() == parameter.ToString() ? ActiveBrush : InactiveBrush;
     }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotImplementedException();
 }

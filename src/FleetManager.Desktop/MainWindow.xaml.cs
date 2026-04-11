@@ -26,6 +26,12 @@ public partial class MainWindow : Window
         await RunUiActionAsync(_viewModel.InitializeAsync);
     }
 
+    protected override async void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        await _viewModel.DisconnectSignalRAsync();
+    }
+
     private void Nav_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is string viewName)

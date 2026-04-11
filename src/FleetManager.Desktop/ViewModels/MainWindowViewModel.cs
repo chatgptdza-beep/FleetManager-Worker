@@ -28,6 +28,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly List<AccountCardViewModel> _allAccounts = new();
     private readonly List<AccountCardViewModel> _selectedNodeAccounts = new();
     private readonly Dictionary<Guid, ViewerSessionInfo> _viewerSessions = new();
+    private readonly SignalRService _signalR = new();
+    private string _signalRStatus = "Not connected";
     private NodeCardViewModel? _selectedNode;
     private AccountCardViewModel? _selectedAccount;
     private AccountCardViewModel? _focusedAccount;
@@ -58,6 +60,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public Visibility NodesViewVisibility => CurrentView == MainView.Nodes ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ManualQueueViewVisibility => CurrentView == MainView.ManualQueue ? Visibility.Visible : Visibility.Collapsed;
     public Visibility SettingsViewVisibility => CurrentView == MainView.Settings ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ManualQueueEmptyVisibility => ManualQueueAccounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsDashboardActive => CurrentView == MainView.Dashboard;
     public bool IsAccountsActive => CurrentView == MainView.Accounts;
@@ -221,8 +224,11 @@ public sealed class MainWindowViewModel : ViewModelBase
     /// <summary>Exposes the data service for use in code-behind (e.g. RemoteTakeoverWindow).</summary>
     public IDashboardDataService DataService => _dataService;
 
-    public Task InitializeAsync()
-        => ReloadAsync();
+    public async Task InitializeAsync()
+    {
+        await ReloadAsync();
+        await TryConnectSignalRAsync();
+    }
 
     public async Task ReloadAsync(Guid? preferredNodeId = null, Guid? preferredAccountId = null)
     {
@@ -241,6 +247,71 @@ public sealed class MainWindowViewModel : ViewModelBase
             _isInitializing = false;
             NotifyDashboardPropertiesChanged();
         }
+    }
+
+    private async Task TryConnectSignalRAsync()
+    {
+        try
+        {
+            var token = _dataService.BearerToken;
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                SignalRStatusLabel = "No auth token";
+                return;
+            }
+
+            _signalR.OnBotStatusChanged += OnSignalRBotStatusChanged;
+            _signalR.OnManualRequired += OnSignalRManualRequired;
+            _signalR.OnProxyRotated += OnSignalRProxyRotated;
+
+            await _signalR.ConnectAsync(_dataService.CurrentBaseUrl, token);
+            SignalRStatusLabel = _signalR.IsConnected ? "Connected" : "Connection failed";
+        }
+        catch
+        {
+            SignalRStatusLabel = "Connection failed";
+        }
+    }
+
+    public async Task DisconnectSignalRAsync()
+    {
+        try
+        {
+            _signalR.OnBotStatusChanged -= OnSignalRBotStatusChanged;
+            _signalR.OnManualRequired -= OnSignalRManualRequired;
+            _signalR.OnProxyRotated -= OnSignalRProxyRotated;
+            await _signalR.DisconnectAsync();
+            SignalRStatusLabel = "Disconnected";
+        }
+        catch { /* cleanup best-effort */ }
+    }
+
+    private void OnSignalRBotStatusChanged(Guid accountId, string status)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(async () =>
+        {
+            await ReloadAsync(SelectedNode?.NodeId, accountId);
+            StatusMessage = $"Live: {status} | {SourceBanner}";
+        });
+    }
+
+    private void OnSignalRManualRequired(Guid accountId, string vncUrl)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(async () =>
+        {
+            _viewerSessions[accountId] = new ViewerSessionInfo(vncUrl, $"Manual takeover ready: {vncUrl}");
+            await ReloadAsync(SelectedNode?.NodeId, accountId);
+            StatusMessage = $"Live: Manual required | {SourceBanner}";
+        });
+    }
+
+    private void OnSignalRProxyRotated(Guid accountId, int newIndex)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(async () =>
+        {
+            await ReloadAsync(SelectedNode?.NodeId, accountId);
+            StatusMessage = $"Live: Proxy rotated (index {newIndex}) | {SourceBanner}";
+        });
     }
 
     public async Task CreateAccountAsync(CreateAccountRequest request)
@@ -672,7 +743,20 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsNodesActive));
         OnPropertyChanged(nameof(IsManualQueueActive));
         OnPropertyChanged(nameof(IsSettingsActive));
+        OnPropertyChanged(nameof(ManualQueueEmptyVisibility));
+        OnPropertyChanged(nameof(ApiBaseUrlLabel));
+        OnPropertyChanged(nameof(DataSourceModeLabel));
+        OnPropertyChanged(nameof(SignalRStatusLabel));
     }
+
+    public string SignalRStatusLabel
+    {
+        get => _signalRStatus;
+        private set => SetProperty(ref _signalRStatus, value);
+    }
+
+    public string ApiBaseUrlLabel => _dataService.CurrentBaseUrl;
+    public string DataSourceModeLabel => _dataService.CurrentModeLabel;
 
     public string? GetFocusedViewerUrl()
         => string.IsNullOrWhiteSpace(FocusedViewerUrl) ? null : FocusedViewerUrl;

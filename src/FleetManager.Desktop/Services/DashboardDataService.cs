@@ -17,12 +17,17 @@ public sealed class DashboardDataService : IDashboardDataService
     public DashboardDataService()
     {
         CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://82.223.9.98:5000/");
-        _httpClient = new HttpClient { BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute) };
+        _httpClient = new HttpClient
+        {
+            BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute),
+            Timeout = TimeSpan.FromSeconds(10)
+        };
         CurrentModeLabel = "API mode";
     }
 
     public string CurrentModeLabel { get; private set; }
     public string CurrentBaseUrl { get; private set; }
+    public string? BearerToken => _bearerToken;
 
     public void ConfigureBaseUrl(string baseUrl)
     {
@@ -39,9 +44,10 @@ public sealed class DashboardDataService : IDashboardDataService
         try
         {
             if (_bearerToken != null) return;
+            var password = Environment.GetEnvironmentVariable("FLEETMANAGER_API_PASSWORD") ?? "Admin@FleetMgr2026!";
             var response = await _httpClient.PostAsJsonAsync(
                 "api/auth/token",
-                new { Password = "Admin@FleetMgr2026!" },
+                new { Password = password },
                 cancellationToken);
             if (response.IsSuccessStatusCode)
             {

@@ -7,6 +7,7 @@ public sealed class OfflineDashboardDataService : IDashboardDataService
 {
     public string CurrentModeLabel => "Offline mode";
     public string CurrentBaseUrl { get; private set; } = "http://localhost:5188/";
+    public string? BearerToken => null;
 
     public void ConfigureBaseUrl(string baseUrl)
     {

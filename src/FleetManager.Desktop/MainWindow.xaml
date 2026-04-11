@@ -11,6 +11,7 @@
     <Window.Resources>
         <conv:EqualityToBrushConverter x:Key="EqBrush" />
         <conv:EqualityToBorderBrushConverter x:Key="EqBorder" />
+        <conv:EqualityToForegroundConverter x:Key="EqFg" />
         
         <Style x:Key="PanelStyle" TargetType="Border">
             <Setter Property="Background" Value="#162532" />
@@ -43,42 +44,6 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
-            <Style.Triggers>
-                <!-- We handle active state via the converters above, but we need to specific parameters for each button. 
-                     Actually, a better way is to move the active state logic into the button instance or use a more clever trigger.
-                     Let's use a simpler fix: One trigger per view name in the Style. -->
-                <DataTrigger Binding="{Binding CurrentView}" Value="Dashboard">
-                    <Setter Property="Foreground" Value="#F8F5F1" />
-                </DataTrigger>
-                <DataTrigger Binding="{Binding CurrentView}" Value="Accounts">
-                    <Setter Property="Foreground" Value="#F8F5F1" />
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
-        <Style x:Key="GhostButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="#F8F5F1" />
-            <Setter Property="Background" Value="#1A2A35" />
-            <Setter Property="BorderBrush" Value="#2C3A43" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="16,0" />
-            <Setter Property="Height" Value="40" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="12" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}">
-            <Setter Property="Foreground" Value="#09231F" />
-            <Setter Property="Background" Value="#47C1A8" />
-            <Setter Property="BorderBrush" Value="#47C1A8" />
-            <Setter Property="FontWeight" Value="Bold" />
         </Style>
 
         <Style TargetType="TabItem">
@@ -109,6 +74,8 @@
             <Setter Property="BorderBrush" Value="#1F3241" />
             <Setter Property="Height" Value="64" />
             <Setter Property="Foreground" Value="#F8F5F1" />
+            <Setter Property="ContextMenu" Value="{StaticResource AccountRowContextMenu}" />
+            <EventSetter Event="PreviewMouseRightButtonDown" Handler="AccountRow_PreviewMouseRightButtonDown" />
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
                     <Setter Property="Background" Value="#1F3241" />
@@ -132,243 +99,501 @@
         <Viewbox Stretch="Uniform">
             <Grid Width="1680" Height="1080" Margin="24">
                 <Border Background="#0E1A24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="32">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="280" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Background="#13202B" BorderBrush="#2C3A43" BorderThickness="0,0,1,0" CornerRadius="32,0,0,32" Padding="24">
-                    <DockPanel>
-                        <Border DockPanel.Dock="Bottom" Padding="18" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="22">
-                            <StackPanel>
-                                <TextBlock Foreground="#F8F5F1" FontWeight="Bold" Text="Today Snapshot" />
-                                <TextBlock Margin="0,12,0,0" Foreground="#B9C4CD" Text="{Binding ProfilesLoadedLabel, StringFormat=Profiles loaded: {0}}" />
-                                <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ConnectedNodesSummary, StringFormat=Connected nodes: {0}}" />
-                                <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ManualQueueLabel, StringFormat=Manual takeover: {0}}" />
-                                <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding AveragePingLabel, StringFormat=Average latency: {0}}" />
-                            </StackPanel>
-                        </Border>
-                        <StackPanel>
-                            <Border Padding="16" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="20">
-                                <StackPanel>
-                                    <TextBlock Foreground="#47C1A8" FontSize="12" FontWeight="SemiBold" Text="CONTROL LAYER" />
-                                    <TextBlock Margin="0,10,0,0" Foreground="#F8F5F1" FontSize="22" FontWeight="Bold" TextWrapping="Wrap" Text="VPS Fleet Manager" />
-                                    <TextBlock Margin="0,10,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="Desktop controller for node health and fleet automation." />
-                                </StackPanel>
-                            </Border>
-
-                            <StackPanel Margin="0,20,0,0">
-                                <Button Style="{StaticResource SidebarButtonStyle}" Tag="Dashboard" Click="Nav_Click"
-                                        Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Dashboard}"
-                                        BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Dashboard}">
-                                    <TextBlock FontWeight="SemiBold" Text="{Binding TotalAccountCount, StringFormat=Monitor Dashboard    {0}}" />
-                                </Button>
-                                <Button Style="{StaticResource SidebarButtonStyle}" Tag="Accounts" Click="Nav_Click"
-                                        Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Accounts}"
-                                        BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Accounts}">
-                                    <TextBlock Text="{Binding AccountsGroupLabel, StringFormat=Account Manager    {0}}" />
-                                </Button>
-                                <Button Style="{StaticResource SidebarButtonStyle}" Tag="Nodes" Click="Nav_Click">
-                                    <TextBlock Text="{Binding ConnectedNodesSummary, StringFormat=VPS Health Center    {0}}" />
-                                </Button>
-                                <Button Style="{StaticResource SidebarButtonStyle}" Tag="ManualQueue" Click="Nav_Click">
-                                    <TextBlock Text="{Binding ManualQueueLabel, StringFormat=Manual Queue    {0}}" />
-                                </Button>
-                                <Button Style="{StaticResource SidebarButtonStyle}" Tag="Settings" Click="Nav_Click">
-                                    <TextBlock Text="System Settings    JSON" />
-                                </Button>
-                            </StackPanel>
-                        </StackPanel>
-                    </DockPanel>
-                </Border>
-                <Grid Grid.Column="1" Margin="28,28,30,30">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <!-- TOP HEADER -->
-                    <Grid Grid.Row="0">
+                    <Grid>
                         <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="280" />
                             <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <StackPanel>
-                            <TextBlock Foreground="#F8F5F1" FontSize="28" FontWeight="Bold" Text="{Binding CurrentView, StringFormat={}{0}}" />
-                            <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SourceBanner}" TextWrapping="Wrap" />
-                            <TextBlock Margin="0,4,0,0" Foreground="#9AD8CA" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
-                        </StackPanel>
-                        <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
-                            <Border Width="200" Height="44" Margin="0,0,10,10" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="16">
-                                <TextBox Margin="14,0" Background="Transparent" BorderThickness="0" VerticalContentAlignment="Center" Foreground="#F8F5F1" CaretBrush="#F8F5F1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search email, stage, status, or VPS IP" />
-                            </Border>
-                            <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="LoadConfig_Click" Content="Load Config" />
-                            <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="SaveConfig_Click" Content="Save Config" />
-                            <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="AddVps_Click" Content="Add VPS" />
-                            <Button Margin="0,0,0,10" Style="{StaticResource PrimaryButtonStyle}" Height="44" Click="AddAccount_Click" Content="Add Account" />
-                        </WrapPanel>
-                    </Grid>
 
-                    <!-- VIEW CONTENT AREA -->
-                    <Grid Grid.Row="1" Margin="0,16,0,0">
-                        
-                        <!-- DASHBOARD MONITOR VIEW -->
-                        <Grid Visibility="{Binding DashboardViewVisibility}">
+                        <!-- ═══════════════ SIDEBAR ═══════════════ -->
+                        <Border Grid.Column="0" Background="#13202B" BorderBrush="#2C3A43" BorderThickness="0,0,1,0" CornerRadius="32,0,0,32" Padding="24">
+                            <DockPanel>
+                                <Border DockPanel.Dock="Bottom" Padding="18" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="22">
+                                    <StackPanel>
+                                        <TextBlock Foreground="#F8F5F1" FontWeight="Bold" Text="Today Snapshot" />
+                                        <TextBlock Margin="0,12,0,0" Foreground="#B9C4CD" Text="{Binding ProfilesLoadedLabel, StringFormat=Profiles loaded: {0}}" />
+                                        <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ConnectedNodesSummary, StringFormat=Connected nodes: {0}}" />
+                                        <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ManualQueueLabel, StringFormat=Manual takeover: {0}}" />
+                                        <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding AveragePingLabel, StringFormat=Average latency: {0}}" />
+                                    </StackPanel>
+                                </Border>
+                                <StackPanel>
+                                    <Border Padding="16" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="20">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#47C1A8" FontSize="12" FontWeight="SemiBold" Text="CONTROL LAYER" />
+                                            <TextBlock Margin="0,10,0,0" Foreground="#F8F5F1" FontSize="22" FontWeight="Bold" TextWrapping="Wrap" Text="VPS Fleet Manager" />
+                                            <TextBlock Margin="0,10,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="Desktop controller for node health and fleet automation." />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <StackPanel Margin="0,20,0,0">
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="Dashboard" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Dashboard}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Dashboard}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Dashboard}">
+                                            <TextBlock FontWeight="SemiBold" Text="{Binding TotalAccountCount, StringFormat=Monitor Dashboard    {0}}" />
+                                        </Button>
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="Accounts" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Accounts}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Accounts}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Accounts}">
+                                            <TextBlock Text="{Binding AccountsGroupLabel, StringFormat=Account Manager    {0}}" />
+                                        </Button>
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="Nodes" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Nodes}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Nodes}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Nodes}">
+                                            <TextBlock Text="{Binding ConnectedNodesSummary, StringFormat=VPS Health Center    {0}}" />
+                                        </Button>
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="ManualQueue" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=ManualQueue}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=ManualQueue}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=ManualQueue}">
+                                            <TextBlock Text="{Binding ManualQueueLabel, StringFormat=Manual Queue    {0}}" />
+                                        </Button>
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="Settings" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Settings}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Settings}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Settings}">
+                                            <TextBlock Text="System Settings" />
+                                        </Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- ═══════════════ CONTENT AREA ═══════════════ -->
+                        <Grid Grid.Column="1" Margin="28,28,30,30">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            
-                            <UniformGrid Columns="4" Margin="0,0,0,16">
-                                <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="ACTIVE SESSIONS" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding TotalActiveSessions}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Live browser sessions across all nodes." /></StackPanel></Border>
-                                <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="MANUAL REQUIRED" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding ManualRequiredCount}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Accounts waiting for operator action." /></StackPanel></Border>
-                                <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="NODE THROUGHPUT" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding NodeThroughputLabel}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Approximate account distribution per node." /></StackPanel></Border>
-                                <Border Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="AVERAGE PING" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding AveragePingLabel}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Measured from desktop to VPS nodes." /></StackPanel></Border>
-                            </UniformGrid>
 
-                            <Border Grid.Row="1" Style="{StaticResource PanelStyle}" Margin="0">
-                                <Grid>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="VPS REAL-TIME MONITOR" />
-                                        <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Real-time heartbeat and resource allocation" />
-                                    </Grid>
-                                    <ScrollViewer Grid.Row="1" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding Nodes}">
-                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Margin="0,0,12,12" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
-                                                        <StackPanel>
-                                                            <DockPanel><TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="{Binding NodeDisplayName}" /><Border DockPanel.Dock="Right" Background="{Binding HealthChipBackground}" CornerRadius="999" Padding="10,6"><TextBlock Foreground="{Binding HealthChipForeground}" FontSize="12" FontWeight="Bold" Text="{Binding HealthChipLabel}" /></Border></DockPanel>
-                                                            <Grid Margin="0,12,0,0">
-                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                                <StackPanel>
-                                                                    <TextBlock Foreground="#B9C4CD" FontSize="11" Text="COMPUTE" />
-                                                                    <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding CpuLabel, StringFormat=CPU: {0}}" />
-                                                                    <TextBlock Margin="0,2,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding RamLabel, StringFormat=RAM: {0}}" />
-                                                                </StackPanel>
-                                                                <StackPanel Grid.Column="1">
-                                                                    <TextBlock Foreground="#B9C4CD" FontSize="11" Text="WORKLOAD" />
-                                                                    <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding BrowsersLabel, StringFormat=Active: {0}}" />
-                                                                    <TextBlock Margin="0,2,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding PingLabel, StringFormat=Ping: {0}ms}" />
-                                                                </StackPanel>
-                                                            </Grid>
-                                                            <ProgressBar Margin="0,12,0,0" Height="4" Background="#111B24" BorderThickness="0" Foreground="#47C1A8" Value="{Binding CpuPercent}" />
-                                                            <TextBlock Margin="0,10,0,0" Foreground="#8FA0AA" FontSize="11" Text="{Binding FooterSummary}" />
-                                                        </StackPanel>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Grid>
-                            </Border>
-                        </Grid>
+                            <!-- TOP HEADER -->
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Foreground="#F8F5F1" FontSize="28" FontWeight="Bold" Text="{Binding CurrentView, StringFormat={}{0}}" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SourceBanner}" TextWrapping="Wrap" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="#9AD8CA" Text="{Binding StatusMessage}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <WrapPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right">
+                                    <Border Width="200" Height="44" Margin="0,0,10,10" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="16">
+                                        <TextBox Margin="14,0" Background="Transparent" BorderThickness="0" VerticalContentAlignment="Center" Foreground="#F8F5F1" CaretBrush="#F8F5F1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search email, stage, status, or VPS IP" />
+                                    </Border>
+                                    <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="LoadConfig_Click" Content="Load Config" />
+                                    <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="SaveConfig_Click" Content="Save Config" />
+                                    <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="ExportLogs_Click" Content="Export CSV" />
+                                    <Button Margin="0,0,10,10" Style="{StaticResource GhostButtonStyle}" Height="44" Click="AddVps_Click" Content="Add VPS" />
+                                    <Button Margin="0,0,0,10" Style="{StaticResource PrimaryButtonStyle}" Height="44" Click="AddAccount_Click" Content="Add Account" />
+                                </WrapPanel>
+                            </Grid>
 
-                        <!-- ACCOUNTS MANAGEMENT VIEW -->
-                        <Grid Visibility="{Binding AccountsViewVisibility}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="1.4*" />
-                                <ColumnDefinition Width="16" />
-                                <ColumnDefinition Width="0.85*" />
-                            </Grid.ColumnDefinitions>
-
-                            <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
-                                <Grid>
+                            <!-- ═══════ VIEW CONTENT AREA ═══════ -->
+                            <Grid Grid.Row="1" Margin="0,16,0,0">
+                        
+                                <!-- ──────── DASHBOARD MONITOR VIEW ──────── -->
+                                <Grid Visibility="{Binding DashboardViewVisibility}">
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Account Management Center" />
-                                        <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Full control over browser sessions per VPS group" />
-                                    </Grid>
-                                    <TabControl Grid.Row="1" Margin="0,16,0,0" ItemsSource="{Binding Nodes}" SelectedItem="{Binding SelectedNode}">
-                                        <TabControl.ContentTemplate><DataTemplate><Grid Height="0" /></DataTemplate></TabControl.ContentTemplate>
-                                        <TabControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontWeight="Bold" Text="{Binding Name}" />
-                                                    <TextBlock Margin="8,0,0,0" Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontSize="11" Text="{Binding AssignedAccountCount, StringFormat={}({0})}" />
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </TabControl.ItemTemplate>
-                                    </TabControl>
-                                    <Border Grid.Row="2" Margin="0,12,0,0" Padding="12" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="16">
-                                        <DockPanel LastChildFill="False">
-                                            <WrapPanel>
-                                                <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="SelectAllVisible_Click" Content="All" />
-                                                <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="ClearSelection_Click" Content="Clear" />
-                                                <Button Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}" Height="34" Click="StartSelected_Click" Content="Start" />
-                                                <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="StopSelected_Click" Content="Stop" />
-                                                <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="DeleteSelectedAccounts_Click" Content="Del" Background="#4B2025" BorderBrush="#FFB1B1" Foreground="#FFB1B1" />
-                                                <Button Margin="0,0,0,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="LoginSelected_Click" Content="Login" />
-                                            </WrapPanel>
-                                            <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBlock HorizontalAlignment="Right" Foreground="#F8F5F1" FontWeight="Bold" FontSize="12" Text="{Binding SelectionSummary}" />
-                                            </StackPanel>
-                                        </DockPanel>
+                                    
+                                    <UniformGrid Columns="4" Margin="0,0,0,16">
+                                        <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="ACTIVE SESSIONS" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding TotalActiveSessions}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Live browser sessions across all nodes." /></StackPanel></Border>
+                                        <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="MANUAL REQUIRED" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding ManualRequiredCount}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Accounts waiting for operator action." /></StackPanel></Border>
+                                        <Border Margin="0,0,16,0" Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="NODE THROUGHPUT" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding NodeThroughputLabel}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Approximate account distribution per node." /></StackPanel></Border>
+                                        <Border Style="{StaticResource PanelStyle}"><StackPanel><TextBlock Foreground="#B9C4CD" Text="AVERAGE PING" /><TextBlock Margin="0,8,0,4" Foreground="#F8F5F1" FontSize="32" FontWeight="Bold" Text="{Binding AveragePingLabel}" /><TextBlock Foreground="#B9C4CD" TextWrapping="Wrap" FontSize="11" Text="Measured from desktop to VPS nodes." /></StackPanel></Border>
+                                    </UniformGrid>
+
+                                    <Border Grid.Row="1" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="VPS REAL-TIME MONITOR" />
+                                                <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Real-time heartbeat and resource allocation" />
+                                            </Grid>
+                                            <ScrollViewer Grid.Row="1" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl ItemsSource="{Binding Nodes}">
+                                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Margin="0,0,12,12" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
+                                                                <StackPanel>
+                                                                    <DockPanel><TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="{Binding NodeDisplayName}" /><Border DockPanel.Dock="Right" Background="{Binding HealthChipBackground}" CornerRadius="999" Padding="10,6"><TextBlock Foreground="{Binding HealthChipForeground}" FontSize="12" FontWeight="Bold" Text="{Binding HealthChipLabel}" /></Border></DockPanel>
+                                                                    <Grid Margin="0,12,0,0">
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                        <StackPanel>
+                                                                            <TextBlock Foreground="#B9C4CD" FontSize="11" Text="COMPUTE" />
+                                                                            <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding CpuLabel, StringFormat=CPU: {0}}" />
+                                                                            <TextBlock Margin="0,2,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding RamLabel, StringFormat=RAM: {0}}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="1">
+                                                                            <TextBlock Foreground="#B9C4CD" FontSize="11" Text="WORKLOAD" />
+                                                                            <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding BrowsersLabel, StringFormat=Active: {0}}" />
+                                                                            <TextBlock Margin="0,2,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding PingLabel, StringFormat=Ping: {0}ms}" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                    <ProgressBar Margin="0,12,0,0" Height="4" Background="#111B24" BorderThickness="0" Foreground="#47C1A8" Value="{Binding CpuPercent}" />
+                                                                    <TextBlock Margin="0,10,0,0" Foreground="#8FA0AA" FontSize="11" Text="{Binding FooterSummary}" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Grid>
                                     </Border>
-                                    <DataGrid Grid.Row="3" Margin="0,14,0,0" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="None" RowStyle="{StaticResource AccountRowStyle}" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}">
-                                        <DataGrid.Columns>
-                                            <DataGridTextColumn Header="ID" Binding="{Binding AccountCode}" Width="90" />
-                                            <DataGridTemplateColumn Header="EMAIL" Width="2.5*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                            <DataGridTemplateColumn Header="STATUS" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border Background="{Binding StatusBadgeBackground}" CornerRadius="999" Padding="10,4"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                            <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="2.*" />
-                                            <DataGridTemplateColumn Header="ACTION" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                        </DataGrid.Columns>
-                                    </DataGrid>
                                 </Grid>
-                            </Border>
 
-                            <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
-                                <Grid>
-                                    <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" Visibility="{Binding FocusedAccountPlaceholderVisibility}" Text="Select an account to view lifecycle details." />
-                                    <Grid Visibility="{Binding FocusedAccountDetailVisibility}">
-                                        <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
-                                        <StackPanel><TextBlock Foreground="#F8F5F1" FontSize="20" FontWeight="Bold" Text="{Binding FocusedAccountName}" /><TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" Text="{Binding FocusedAccountSummary}" /></StackPanel>
-                                        
-                                        <Border Grid.Row="1" Margin="0,14,0,0" Padding="14" Background="#143A33" BorderBrush="#47C1A8" BorderThickness="1" CornerRadius="14" Visibility="{Binding FocusedViewerPanelVisibility}">
-                                            <StackPanel>
-                                                <TextBlock Foreground="#F8F5F1" FontWeight="Bold" Text="Remote Viewer Ready" />
-                                                <TextBlock Margin="0,6,0,0" Foreground="#BEEBDD" TextWrapping="Wrap" FontSize="11" Text="{Binding FocusedViewerUrl}" Visibility="{Binding FocusedViewerUrlVisibility}" />
-                                                <StackPanel Margin="0,12,0,0" Orientation="Horizontal" Visibility="{Binding FocusedViewerUrlVisibility}">
-                                                    <Button Margin="0,0,10,0" Style="{StaticResource GhostButtonStyle}" Height="32" Click="OpenViewerUrl_Click" Content="Open Viewer" />
-                                                    <Button Style="{StaticResource GhostButtonStyle}" Height="32" Click="CopyViewerUrl_Click" Content="Copy URL" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Border>
+                                <!-- ──────── ACCOUNTS MANAGEMENT VIEW ──────── -->
+                                <Grid Visibility="{Binding AccountsViewVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.4*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="0.85*" />
+                                    </Grid.ColumnDefinitions>
 
-                                        <ScrollViewer Grid.Row="3" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
-                                            <ItemsControl ItemsSource="{Binding FocusedAccountStages}">
-                                                <ItemsControl.ItemTemplate>
+                                    <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Account Management Center" />
+                                                <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Full control over browser sessions per VPS group" />
+                                            </Grid>
+                                            <TabControl Grid.Row="1" Margin="0,16,0,0" ItemsSource="{Binding Nodes}" SelectedItem="{Binding SelectedNode}">
+                                                <TabControl.ContentTemplate><DataTemplate><Grid Height="0" /></DataTemplate></TabControl.ContentTemplate>
+                                                <TabControl.ItemTemplate>
                                                     <DataTemplate>
-                                                        <Border Margin="0,0,0,10" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
-                                                            <Grid>
-                                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                                                <StackPanel><TextBlock Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding StageName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="11" TextWrapping="Wrap" Text="{Binding Detail}" /></StackPanel>
-                                                                <Border Grid.Column="1" VerticalAlignment="Top" Background="#143A33" CornerRadius="999" Padding="8,4"><TextBlock Foreground="#47C1A8" FontSize="10" FontWeight="Bold" Text="{Binding State}" /></Border>
-                                                            </Grid>
-                                                        </Border>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontWeight="Bold" Text="{Binding Name}" />
+                                                            <TextBlock Margin="8,0,0,0" Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontSize="11" Text="{Binding AssignedAccountCount, StringFormat={}({0})}" />
+                                                        </StackPanel>
                                                     </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </ScrollViewer>
-                                    </Grid>
-                                </Grid>
-                            </Border>
-                        </Grid>
+                                                </TabControl.ItemTemplate>
+                                            </TabControl>
+                                            <Border Grid.Row="2" Margin="0,12,0,0" Padding="12" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="16">
+                                                <DockPanel LastChildFill="False">
+                                                    <WrapPanel>
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="SelectAllVisible_Click" Content="All" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="ClearSelection_Click" Content="Clear" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}" Height="34" Click="StartSelected_Click" Content="Start" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="StopSelected_Click" Content="Stop" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="LoginSelected_Click" Content="Login" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="StartAutoSelected_Click" Content="Auto ▶" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="PauseAutoSelected_Click" Content="Auto ⏸" />
+                                                        <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="StopAutoSelected_Click" Content="Auto ■" />
+                                                        <Button Margin="0,0,0,0" Style="{StaticResource GhostButtonStyle}" Height="34" Click="DeleteSelectedAccounts_Click" Content="Del" Background="#4B2025" BorderBrush="#FFB1B1" Foreground="#FFB1B1" />
+                                                    </WrapPanel>
+                                                    <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                        <TextBlock HorizontalAlignment="Right" Foreground="#F8F5F1" FontWeight="Bold" FontSize="12" Text="{Binding SelectionSummary}" />
+                                                    </StackPanel>
+                                                </DockPanel>
+                                            </Border>
+                                            <DataGrid Grid.Row="3" Margin="0,14,0,0" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="None" RowStyle="{StaticResource AccountRowStyle}" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}">
+                                                <DataGrid.Columns>
+                                                    <DataGridTextColumn Header="ID" Binding="{Binding AccountCode}" Width="90" />
+                                                    <DataGridTemplateColumn Header="EMAIL" Width="2.5*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTemplateColumn Header="STATUS" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border Background="{Binding StatusBadgeBackground}" CornerRadius="999" Padding="10,4"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="2.*" />
+                                                    <DataGridTemplateColumn Header="ACTION" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                </DataGrid.Columns>
+                                            </DataGrid>
+                                        </Grid>
+                                    </Border>
 
+                                    <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" Visibility="{Binding FocusedAccountPlaceholderVisibility}" Text="Select an account to view lifecycle details." />
+                                            <Grid Visibility="{Binding FocusedAccountDetailVisibility}">
+                                                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                                                <StackPanel><TextBlock Foreground="#F8F5F1" FontSize="20" FontWeight="Bold" Text="{Binding FocusedAccountName}" /><TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" Text="{Binding FocusedAccountSummary}" /></StackPanel>
+                                                
+                                                <Border Grid.Row="1" Margin="0,14,0,0" Padding="14" Background="#143A33" BorderBrush="#47C1A8" BorderThickness="1" CornerRadius="14" Visibility="{Binding FocusedViewerPanelVisibility}">
+                                                    <StackPanel>
+                                                        <TextBlock Foreground="#F8F5F1" FontWeight="Bold" Text="Remote Viewer Ready" />
+                                                        <TextBlock Margin="0,6,0,0" Foreground="#BEEBDD" TextWrapping="Wrap" FontSize="11" Text="{Binding FocusedViewerUrl}" Visibility="{Binding FocusedViewerUrlVisibility}" />
+                                                        <StackPanel Margin="0,12,0,0" Orientation="Horizontal" Visibility="{Binding FocusedViewerUrlVisibility}">
+                                                            <Button Margin="0,0,10,0" Style="{StaticResource GhostButtonStyle}" Height="32" Click="OpenViewerUrl_Click" Content="Open Viewer" />
+                                                            <Button Style="{StaticResource GhostButtonStyle}" Height="32" Click="CopyViewerUrl_Click" Content="Copy URL" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <ScrollViewer Grid.Row="3" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding FocusedAccountStages}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,10" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                                        <StackPanel><TextBlock Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding StageName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="11" TextWrapping="Wrap" Text="{Binding Detail}" /></StackPanel>
+                                                                        <Border Grid.Column="1" VerticalAlignment="Top" Background="#143A33" CornerRadius="999" Padding="8,4"><TextBlock Foreground="#47C1A8" FontSize="10" FontWeight="Bold" Text="{Binding State}" /></Border>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <!-- ──────── NODES (VPS HEALTH CENTER) VIEW ──────── -->
+                                <Grid Visibility="{Binding NodesViewVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.6*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Left: Resource monitoring cards -->
+                                    <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="VPS Health Monitor" />
+                                                <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="CPU · RAM · Storage · Ping tracking per node" />
+                                            </Grid>
+                                            <TabControl Grid.Row="1" Margin="0,14,0,0" ItemsSource="{Binding Nodes}" SelectedItem="{Binding SelectedNode}">
+                                                <TabControl.ContentTemplate><DataTemplate><Grid Height="0" /></DataTemplate></TabControl.ContentTemplate>
+                                                <TabControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <TextBlock Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontWeight="Bold" Text="{Binding Name}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </TabControl.ItemTemplate>
+                                            </TabControl>
+                                            <ScrollViewer Grid.Row="2" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl ItemsSource="{Binding Nodes}">
+                                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Margin="0,0,12,12" Padding="18" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
+                                                                <StackPanel>
+                                                                    <DockPanel>
+                                                                        <TextBlock Foreground="#F8F5F1" FontSize="15" FontWeight="Bold" Text="{Binding NodeDisplayName}" />
+                                                                        <Border DockPanel.Dock="Right" Background="{Binding HealthChipBackground}" CornerRadius="999" Padding="10,6">
+                                                                            <TextBlock Foreground="{Binding HealthChipForeground}" FontSize="11" FontWeight="Bold" Text="{Binding HealthChipLabel}" />
+                                                                        </Border>
+                                                                    </DockPanel>
+                                                                    <!-- CPU -->
+                                                                    <TextBlock Margin="0,14,0,0" Foreground="#B9C4CD" FontSize="11" Text="CPU USAGE" />
+                                                                    <Grid Margin="0,4,0,0">
+                                                                        <ProgressBar Height="6" Background="#111B24" BorderThickness="0" Foreground="#47C1A8" Value="{Binding CpuPercent}" />
+                                                                    </Grid>
+                                                                    <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding CpuLabel}" />
+                                                                    <!-- RAM -->
+                                                                    <TextBlock Margin="0,10,0,0" Foreground="#B9C4CD" FontSize="11" Text="RAM USAGE" />
+                                                                    <Grid Margin="0,4,0,0">
+                                                                        <ProgressBar Height="6" Background="#111B24" BorderThickness="0" Foreground="#9AD4FF" Value="{Binding RamPercent}" />
+                                                                    </Grid>
+                                                                    <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding RamLabel}" />
+                                                                    <!-- STORAGE -->
+                                                                    <TextBlock Margin="0,10,0,0" Foreground="#B9C4CD" FontSize="11" Text="STORAGE (SSD)" />
+                                                                    <Grid Margin="0,4,0,0">
+                                                                        <ProgressBar Height="6" Background="#111B24" BorderThickness="0" Foreground="#FFD18F" Value="{Binding DiskPercent}" />
+                                                                    </Grid>
+                                                                    <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding StorageLabel}" />
+                                                                    <!-- PING + CONNECTION -->
+                                                                    <Grid Margin="0,12,0,0">
+                                                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                                        <StackPanel>
+                                                                            <TextBlock Foreground="#B9C4CD" FontSize="11" Text="PING" />
+                                                                            <TextBlock Margin="0,4,0,0" Foreground="#47C1A8" FontSize="22" FontWeight="Bold" Text="{Binding PingLabel, StringFormat={}{0} ms}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="1">
+                                                                            <TextBlock Foreground="#B9C4CD" FontSize="11" Text="SESSIONS" />
+                                                                            <TextBlock Margin="0,4,0,0" Foreground="#F8F5F1" FontSize="22" FontWeight="Bold" Text="{Binding BrowsersLabel}" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                    <!-- Connection badge + heartbeat -->
+                                                                    <DockPanel Margin="0,12,0,0">
+                                                                        <Border Background="{Binding ConnectionBadgeBackground}" CornerRadius="999" Padding="10,4">
+                                                                            <TextBlock Foreground="{Binding ConnectionBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding ConnectionLabel}" />
+                                                                        </Border>
+                                                                        <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="11" Text="{Binding HeartbeatLabel}" />
+                                                                    </DockPanel>
+                                                                    <TextBlock Margin="0,8,0,0" Foreground="#8FA0AA" FontSize="11" Text="{Binding FooterSummary}" />
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Right: Selected node bootstrap details -->
+                                    <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" Visibility="{Binding SelectedNodePlaceholderVisibility}" TextWrapping="Wrap" TextAlignment="Center" Text="Select a VPS tab to view bootstrap details and copy worker config." />
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" Visibility="{Binding SelectedNodeDetailVisibility}">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#F8F5F1" FontSize="20" FontWeight="Bold" Text="{Binding SelectedNodePanelTitle}" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="{Binding SelectedNodePanelSummary}" />
+
+                                                    <Border Margin="0,16,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                        <StackPanel>
+                                                            <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="NODE IDENTITY" />
+                                                            <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" TextWrapping="Wrap" Text="{Binding SelectedNodeIdentityLabel, StringFormat=ID: {0}}" />
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                        <StackPanel>
+                                                            <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="WORKER RUNTIME" />
+                                                            <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" TextWrapping="Wrap" Text="{Binding SelectedNodeRuntimeLabel}" />
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                        <StackPanel>
+                                                            <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="INSTALL COMMAND" />
+                                                            <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" TextWrapping="Wrap" FontSize="11" FontFamily="Consolas" Text="{Binding SelectedNodeInstallCommand}" />
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <StackPanel Margin="0,18,0,0">
+                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyNodeId_Click" Content="📋  Copy Node ID" HorizontalContentAlignment="Center" />
+                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyWorkerConfig_Click" Content="📋  Copy Worker Config JSON" HorizontalContentAlignment="Center" />
+                                                        <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Click="CopyInstallCommand_Click" Content="📋  Copy Install Command" HorizontalContentAlignment="Center" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <!-- ──────── MANUAL QUEUE VIEW ──────── -->
+                                <Grid Visibility="{Binding ManualQueueViewVisibility}">
+                                    <Border Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                                <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Manual Queue" />
+                                                <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Accounts waiting for operator intervention" />
+                                            </Grid>
+                                            
+                                            <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="14"
+                                                       Visibility="{Binding ManualQueueEmptyVisibility}"
+                                                       Text="No accounts currently require manual attention." />
+                                            
+                                            <ScrollViewer Grid.Row="1" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
+                                                <ItemsControl ItemsSource="{Binding ManualQueueAccounts}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Margin="0,0,0,12" Padding="18" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <StackPanel>
+                                                                        <DockPanel>
+                                                                            <TextBlock Foreground="#F8F5F1" FontSize="15" FontWeight="Bold" Text="{Binding DisplayName}" />
+                                                                            <Border DockPanel.Dock="Right" Margin="12,0,0,0" Background="{Binding StatusBadgeBackground}" CornerRadius="999" Padding="10,4">
+                                                                                <TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" />
+                                                                            </Border>
+                                                                        </DockPanel>
+                                                                        <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" Text="{Binding StatusSummary}" />
+                                                                        <Border Margin="0,8,0,0" Padding="10" Background="#4B2025" BorderBrush="#FFB1B1" BorderThickness="1" CornerRadius="10">
+                                                                            <TextBlock Foreground="#FFB1B1" FontSize="12" TextWrapping="Wrap" Text="{Binding ActiveAlertSummary}" />
+                                                                        </Border>
+                                                                    </StackPanel>
+                                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+                                                                        <Button Margin="0,0,0,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueViewBrowser_Click" Content="View Browser" HorizontalContentAlignment="Center" />
+                                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueBringToFront_Click" Content="Bring to Front" HorizontalContentAlignment="Center" />
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+
+                                <!-- ──────── SETTINGS VIEW ──────── -->
+                                <Grid Visibility="{Binding SettingsViewVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Connection" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="API connection and real-time event configuration." />
+
+                                            <Border Margin="0,18,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="API BASE URL" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="13" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding ApiBaseUrlLabel}" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="DATA SOURCE MODE" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="13" Text="{Binding DataSourceModeLabel}" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="SIGNALR STATUS" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="13" Text="{Binding SignalRStatusLabel}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Worker Config Template" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="JSON configuration for the selected VPS agent." />
+
+                                            <Border Margin="0,18,0,0" Padding="14" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <TextBlock Foreground="#9AD8CA" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" Text="{Binding SelectedNodeWorkerConfigJson}" />
+                                            </Border>
+
+                                            <StackPanel Margin="0,16,0,0">
+                                                <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyWorkerConfig_Click" Content="📋  Copy Worker Config" HorizontalContentAlignment="Center" />
+                                                <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Click="CopyInstallCommand_Click" Content="📋  Copy Install Command" HorizontalContentAlignment="Center" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                            </Grid>
+                        </Grid>
                     </Grid>
-                </Grid>
+                </Border>
             </Grid>
-        </Border>
-                </Grid>
-            </Viewbox>
-        </Grid>
+        </Viewbox>
+    </Grid>
 </Window>

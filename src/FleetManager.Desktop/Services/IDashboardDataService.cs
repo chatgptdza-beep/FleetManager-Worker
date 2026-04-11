@@ -7,6 +7,7 @@ public interface IDashboardDataService
 {
     string CurrentModeLabel { get; }
     string CurrentBaseUrl { get; }
+    string? BearerToken { get; }
     void ConfigureBaseUrl(string baseUrl);
     Task<IReadOnlyList<NodeSummaryResponse>> GetNodesAsync(CancellationToken cancellationToken = default);
     Task<NodeSummaryResponse> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default);

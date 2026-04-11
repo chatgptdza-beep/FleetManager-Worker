@@ -1,0 +1,35 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "copilot-full-build",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"FleetManager.sln",
+				"-c",
+				"Release"
+			],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		},
+		{
+			"label": "copilot-full-build",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"FleetManager.sln",
+				"-c",
+				"Release"
+			],
+			"problemMatcher": [
+				"$msCompile"
+			],
+			"group": "build"
+		}
+	]
+}
