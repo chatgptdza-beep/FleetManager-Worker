@@ -1,7 +1,6 @@
 using FleetManager.Application.Abstractions;
 using FleetManager.Application.Services;
 using FleetManager.Infrastructure.Persistence;
-using FleetManager.Domain.Entities;
 using FleetManager.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -56,6 +55,18 @@ public static class DependencyInjection
 
         await dbContext.Database.EnsureCreatedAsync();
 
+        var nowUtc = DateTime.UtcNow;
+        var activeHeartbeatCutoffUtc = nowUtc.AddMinutes(-10);
+
+        var activeDemoNodeIds = await dbContext.VpsNodes
+            .Where(x => DemoNodeIds.Contains(x.Id)
+                && x.LastHeartbeatAtUtc.HasValue
+                && x.LastHeartbeatAtUtc.Value >= activeHeartbeatCutoffUtc)
+            .Select(x => x.Id)
+            .ToArrayAsync();
+
+        var staleDemoNodeIds = DemoNodeIds.Except(activeDemoNodeIds).ToArray();
+
         var demoAccountIds = await dbContext.Accounts
             .Where(a => DemoAccountIds.Contains(a.Id))
             .Select(a => a.Id)
@@ -76,10 +87,27 @@ public static class DependencyInjection
             dbContext.Accounts.RemoveRange(accounts);
         }
 
-        var capabilities = dbContext.NodeCapabilities.Where(x => DemoNodeIds.Contains(x.VpsNodeId));
-        var commands = dbContext.NodeCommands.Where(x => DemoNodeIds.Contains(x.VpsNodeId));
-        var installJobs = dbContext.AgentInstallJobs.Where(x => DemoNodeIds.Contains(x.VpsNodeId));
-        var nodes = dbContext.VpsNodes.Where(x => DemoNodeIds.Contains(x.Id));
+        if (staleDemoNodeIds.Length > 0)
+        {
+            var staleNodeAccountIds = await dbContext.Accounts
+                .Where(x => staleDemoNodeIds.Contains(x.VpsNodeId))
+                .Select(x => x.Id)
+                .ToArrayAsync();
+
+            if (staleNodeAccountIds.Length > 0)
+            {
+                dbContext.ProxyRotationLogs.RemoveRange(dbContext.ProxyRotationLogs.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
+                dbContext.ProxyEntries.RemoveRange(dbContext.ProxyEntries.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
+                dbContext.AccountAlerts.RemoveRange(dbContext.AccountAlerts.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
+                dbContext.AccountWorkflowStages.RemoveRange(dbContext.AccountWorkflowStages.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
+                dbContext.Accounts.RemoveRange(dbContext.Accounts.Where(x => staleNodeAccountIds.Contains(x.Id)));
+            }
+        }
+
+        var capabilities = dbContext.NodeCapabilities.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
+        var commands = dbContext.NodeCommands.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
+        var installJobs = dbContext.AgentInstallJobs.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
+        var nodes = dbContext.VpsNodes.Where(x => staleDemoNodeIds.Contains(x.Id));
 
         dbContext.NodeCapabilities.RemoveRange(capabilities);
         dbContext.NodeCommands.RemoveRange(commands);
