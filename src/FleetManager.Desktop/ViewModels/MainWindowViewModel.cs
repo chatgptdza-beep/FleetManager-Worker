@@ -618,26 +618,11 @@ public sealed class MainWindowViewModel : ViewModelBase
            || string.Equals(commandType, "StopBrowser", StringComparison.Ordinal)
            || string.Equals(commandType, "OpenAssignedSession", StringComparison.Ordinal);
 
-    // Known demo/seed node IDs from the old AppDbContextSeed — filter them out
-    // so the Dashboard only shows real VPS nodes. Once the server's database is
-    // purged (deploy the new API code that has DELETE /api/nodes), this filter
-    // becomes a harmless no-op.
-    private static readonly HashSet<Guid> _demoNodeIds = new()
-    {
-        Guid.Parse("3a5ff57d-e3d8-4d04-858e-fcef5b4997bf"), // VPS-PAR-01
-        Guid.Parse("df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437"), // VPS-FRA-03
-        Guid.Parse("70c8c145-a615-42eb-82bf-b93112f0fe12"), // VPS-MAD-02
-        Guid.Parse("2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf"), // VPS-LAG-04
-    };
-
     private async Task LoadNodesAsync()
     {
         var nodes = await _dataService.GetNodesAsync();
         Nodes.Clear();
-        foreach (var node in nodes
-            .Where(n => !_demoNodeIds.Contains(n.Id))
-            .OrderBy(node => node.Name)
-            .Select(NodeCardViewModel.FromContract))
+        foreach (var node in nodes.OrderBy(node => node.Name).Select(NodeCardViewModel.FromContract))
         {
             Nodes.Add(node);
         }
@@ -649,10 +634,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         var accounts = await _dataService.GetAccountsAsync();
         _allAccounts.Clear();
-        _allAccounts.AddRange(accounts
-            .Where(a => !_demoNodeIds.Contains(a.NodeId))
-            .Select(AccountCardViewModel.FromSummary)
-            .OrderBy(account => account.Email));
+        _allAccounts.AddRange(accounts.Select(AccountCardViewModel.FromSummary).OrderBy(account => account.Email));
         RefreshManualQueue();
         NotifyDashboardPropertiesChanged();
     }
