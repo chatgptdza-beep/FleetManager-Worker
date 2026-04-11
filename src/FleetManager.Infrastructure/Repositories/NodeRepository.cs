@@ -30,6 +30,9 @@ public sealed class NodeRepository(AppDbContext dbContext) : INodeRepository
     public async Task AddAsync(VpsNode node, CancellationToken cancellationToken = default)
         => await dbContext.VpsNodes.AddAsync(node, cancellationToken);
 
+    public async Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default)
+        => await dbContext.NodeCommands.AddAsync(command, cancellationToken);
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         => dbContext.SaveChangesAsync(cancellationToken);
 }

@@ -22,7 +22,7 @@ public sealed class AccountsController(
     public async Task<ActionResult<AccountSummaryResponse>> CreateAsync([FromBody] CreateAccountRequest request, CancellationToken cancellationToken)
     {
         var created = await accountService.CreateAccountAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetStageAlertsAsync), new { accountId = created.Id }, created);
+        return Ok(created);
     }
 
     [HttpGet("{accountId:guid}/stage-alerts")]

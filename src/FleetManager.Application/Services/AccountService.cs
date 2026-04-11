@@ -31,7 +31,6 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
             Username = NormalizeRequired(request.Username, nameof(request.Username)),
             Status = status,
             VpsNodeId = node.Id,
-            VpsNode = node,
             CurrentStageCode = "ready",
             CurrentStageName = "Ready",
             LastStageTransitionAtUtc = DateTime.UtcNow

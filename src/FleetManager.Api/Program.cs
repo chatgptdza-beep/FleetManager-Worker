@@ -67,7 +67,9 @@ app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api/agent"))
     {
-        var expectedApiKey = builder.Configuration["AgentApiKey"] ?? "MASTER-KEY-12345";
+        var expectedApiKey = builder.Configuration["AgentApiKey"]
+            ?? builder.Configuration["Agent:ApiKey"]
+            ?? "MASTER-KEY-12345";
         if (!context.Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey) || extractedApiKey != expectedApiKey)
         {
             context.Response.StatusCode = 401;
@@ -79,6 +81,33 @@ app.Use(async (context, next) =>
 });
 
 app.UseAuthorization();
+
+// Operator login — returns a 24-hour JWT the Desktop uses as Bearer token
+app.MapPost("/api/auth/token", (AuthTokenRequest req, IConfiguration config) =>
+{
+    var adminPassword = config["AdminPassword"] ?? "Admin@FleetMgr2026!";
+    if (req.Password != adminPassword)
+        return Results.Unauthorized();
+
+    var key = config["Jwt:Key"] ?? "12345678901234567890123456789012";
+    var keyBytes = Encoding.UTF8.GetBytes(key);
+    var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
+    {
+        Subject = new System.Security.Claims.ClaimsIdentity(new[]
+        {
+            new System.Security.Claims.Claim("name", "admin"),
+            new System.Security.Claims.Claim("role", "Operator")
+        }),
+        Expires = DateTime.UtcNow.AddHours(24),
+        SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+            new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyBytes),
+            Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
+    };
+    var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+    var token = tokenHandler.CreateToken(tokenDescriptor);
+    return Results.Ok(new { token = tokenHandler.WriteToken(token) });
+}).AllowAnonymous();
+
 app.MapControllers();
 app.MapHub<FleetManager.Api.Hubs.OperationsHub>("/hubs/operations");
 
@@ -128,3 +157,5 @@ app.MapPost("/api/agent/commands/{commandId:guid}/complete", async (Guid command
 });
 
 app.Run();
+
+record AuthTokenRequest(string Password);

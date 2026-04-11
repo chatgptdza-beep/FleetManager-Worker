@@ -11,5 +11,5 @@ if ! browser_is_running; then
 fi
 
 log_line "Viewer opened for $ACCOUNT_ID"
-echo "Viewer ready. URL: http://$FM_VIEWER_HOST:$FM_WEB_PORT/vnc.html"
+echo "Viewer ready. URL: http://$FM_VIEWER_HOST:$FM_WEB_PORT/vnc.html?host=$FM_VIEWER_HOST&port=$FM_WEB_PORT&autoconnect=true&resize=scale&show_dot=true"
 echo "Debug port: $FM_DEBUG_PORT"

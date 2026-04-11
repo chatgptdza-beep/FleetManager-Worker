@@ -1,5 +1,7 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FleetManager.Contracts.Accounts;
 using FleetManager.Contracts.Nodes;
 
@@ -9,10 +11,12 @@ public sealed class DashboardDataService : IDashboardDataService
 {
     private readonly HttpClient _httpClient;
     private readonly OfflineDashboardDataService _fallback = new();
+    private string? _bearerToken;
+    private readonly SemaphoreSlim _authLock = new(1, 1);
 
     public DashboardDataService()
     {
-        CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://localhost:5188/");
+        CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://82.223.9.98:5000/");
         _httpClient = new HttpClient { BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute) };
         CurrentModeLabel = "API mode";
     }
@@ -24,13 +28,41 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         CurrentBaseUrl = NormalizeBaseUrl(baseUrl);
         _httpClient.BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute);
+        _bearerToken = null; // reset token when URL changes
         _fallback.ConfigureBaseUrl(CurrentBaseUrl);
+    }
+
+    private async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken)
+    {
+        if (_bearerToken != null) return;
+        await _authLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_bearerToken != null) return;
+            var response = await _httpClient.PostAsJsonAsync(
+                "api/auth/token",
+                new { Password = "Admin@FleetMgr2026!" },
+                cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+                _bearerToken = result.GetProperty("token").GetString();
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", _bearerToken);
+            }
+        }
+        catch { /* silently fail — API calls will 401 and fall back to offline mode */ }
+        finally
+        {
+            _authLock.Release();
+        }
     }
 
     public async Task<IReadOnlyList<NodeSummaryResponse>> GetNodesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.GetFromJsonAsync<List<NodeSummaryResponse>>("api/nodes", cancellationToken);
             CurrentModeLabel = "API mode";
             return response ?? new List<NodeSummaryResponse>();
@@ -46,6 +78,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.PostAsJsonAsync("api/nodes", request, cancellationToken);
             response.EnsureSuccessStatusCode();
             CurrentModeLabel = "API mode";
@@ -65,6 +98,7 @@ public sealed class DashboardDataService : IDashboardDataService
 
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.GetFromJsonAsync<List<AccountSummaryResponse>>(path, cancellationToken);
             CurrentModeLabel = "API mode";
             return response ?? new List<AccountSummaryResponse>();
@@ -80,6 +114,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             CurrentModeLabel = "API mode";
             return await _httpClient.GetFromJsonAsync<AccountStageAlertDetailsResponse>($"api/accounts/{accountId}/stage-alerts", cancellationToken);
         }
@@ -94,6 +129,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.PostAsJsonAsync("api/accounts", request, cancellationToken);
             response.EnsureSuccessStatusCode();
             CurrentModeLabel = "API mode";
@@ -111,6 +147,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.PutAsJsonAsync($"api/accounts/{accountId}", request, cancellationToken);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -133,6 +170,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             using var response = await _httpClient.DeleteAsync($"api/accounts/{accountId}", cancellationToken);
             CurrentModeLabel = "API mode";
             return response.IsSuccessStatusCode;
@@ -148,6 +186,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             var response = await _httpClient.PostAsJsonAsync($"api/nodes/{nodeId}/commands", request, cancellationToken);
             response.EnsureSuccessStatusCode();
             CurrentModeLabel = "API mode";
@@ -165,6 +204,7 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         try
         {
+            await EnsureAuthenticatedAsync(cancellationToken);
             using var response = await _httpClient.GetAsync($"api/nodes/{nodeId}/commands/{commandId}", cancellationToken);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {

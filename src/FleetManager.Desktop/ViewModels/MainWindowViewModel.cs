@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -302,7 +303,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var command = await WaitForCommandResultAsync(account.NodeId, commandId.Value);
-        var viewerUrl = ExtractViewerUrl(command?.ResultMessage);
+        var viewerUrl = NormalizeViewerUrl(ExtractViewerUrl(command?.ResultMessage), account);
         var viewerMessage = command?.ResultMessage ?? "Viewer command queued. Wait for the worker to publish the session URL.";
 
         _viewerSessions[account.AccountId] = new ViewerSessionInfo(viewerUrl, viewerMessage);
@@ -713,6 +714,64 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         var match = Regex.Match(resultMessage, @"https?://\S+", RegexOptions.IgnoreCase);
         return match.Success ? match.Value.Trim() : null;
+    }
+
+    private string? NormalizeViewerUrl(string? viewerUrl, AccountCardViewModel account)
+    {
+        if (string.IsNullOrWhiteSpace(viewerUrl) || !Uri.TryCreate(viewerUrl, UriKind.Absolute, out var uri))
+        {
+            return viewerUrl;
+        }
+
+        if (!IsLoopbackLikeHost(uri.Host))
+        {
+            return viewerUrl;
+        }
+
+        var replacementHost = ResolveViewerHost(account);
+        if (string.IsNullOrWhiteSpace(replacementHost))
+        {
+            return viewerUrl;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Host = replacementHost
+        };
+
+        return builder.Uri.ToString();
+    }
+
+    private string? ResolveViewerHost(AccountCardViewModel account)
+    {
+        if (Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var apiUri)
+            && !IsLoopbackLikeHost(apiUri.Host))
+        {
+            return apiUri.Host;
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.NodeIpAddress))
+        {
+            return account.NodeIpAddress.Trim();
+        }
+
+        return null;
+    }
+
+    private static bool IsLoopbackLikeHost(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(host, "0.0.0.0", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return IPAddress.TryParse(host, out var ipAddress) && IPAddress.IsLoopback(ipAddress);
     }
 
     private static bool IsManualQueueCandidate(AccountCardViewModel account)

@@ -19,7 +19,7 @@ public sealed class DemoDashboardDataService : IDashboardDataService
     }
 
     public string CurrentModeLabel => "Demo mode";
-    public string CurrentBaseUrl { get; private set; } = "http://localhost:5188/";
+    public string CurrentBaseUrl { get; private set; } = "http://82.223.9.98:5000/";
 
     public void ConfigureBaseUrl(string baseUrl)
     {

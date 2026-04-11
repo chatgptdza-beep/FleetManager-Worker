@@ -20,6 +20,11 @@ public sealed class Worker(
         var settings = options.Value;
         var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(settings.BackendBaseUrl);
+        if (!string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            client.DefaultRequestHeaders.Remove("X-Api-Key");
+            client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey.Trim());
+        }
 
         var nextHeartbeatAtUtc = DateTime.MinValue;
 
@@ -126,7 +131,7 @@ public sealed class Worker(
         var payloadDirectory = Path.Combine(Path.GetTempPath(), "fleetmanager-agent");
         Directory.CreateDirectory(payloadDirectory);
         var payloadPath = Path.Combine(payloadDirectory, $"{command.CommandId}.json");
-        await File.WriteAllTextAsync(payloadPath, command.PayloadJson, Encoding.UTF8, cancellationToken);
+        await File.WriteAllTextAsync(payloadPath, command.PayloadJson, new UTF8Encoding(false), cancellationToken);
 
         var process = new Process
         {

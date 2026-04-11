@@ -106,7 +106,14 @@ ensure_viewer_stack() {
 
   local novnc_dir="${FM_NOVNC_DIR:-/usr/share/novnc}"
   local websockify_bin="${FM_WEBSOCKIFY_BIN:-$(command -v websockify || true)}"
-  if [[ -n "$websockify_bin" && -d "$novnc_dir" ]] && ! pgrep -f "websockify .* $FM_WEB_PORT .* $FM_VNC_PORT" >/dev/null 2>&1; then
+  local web_listener_present="false"
+  if command -v ss >/dev/null 2>&1; then
+    if ss -lnt 2>/dev/null | grep -q ":$FM_WEB_PORT "; then
+      web_listener_present="true"
+    fi
+  fi
+
+  if [[ -n "$websockify_bin" && -d "$novnc_dir" && "$web_listener_present" != "true" ]]; then
     "$websockify_bin" --web "$novnc_dir" "$FM_WEB_PORT" "127.0.0.1:$FM_VNC_PORT" >> "$SESSION_DIR/viewer.log" 2>&1 &
   fi
 }
@@ -117,8 +124,13 @@ resolve_browser_bin() {
     return
   fi
 
-  for candidate in /usr/bin/chromium /usr/bin/chromium-browser /usr/bin/google-chrome /usr/bin/google-chrome-stable; do
+  for candidate in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium-browser /usr/bin/chromium /snap/bin/chromium; do
     if [[ -x "$candidate" ]]; then
+      local resolved_candidate
+      resolved_candidate="$(readlink -f "$candidate" 2>/dev/null || printf '%s' "$candidate")"
+      if [[ "${FM_ALLOW_SNAP_BROWSER:-0}" != "1" ]] && [[ "$resolved_candidate" == /snap/* || "$resolved_candidate" == /var/lib/snapd/snap/* || "$candidate" == /snap/* ]]; then
+        continue
+      fi
       printf '%s\n' "$candidate"
       return
     fi
@@ -137,5 +149,14 @@ browser_is_running() {
   [[ -f "$pid_file" ]] || return 1
   local pid
   pid="$(cat "$pid_file")"
-  kill -0 "$pid" >/dev/null 2>&1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+
+  local cmdline
+  cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+  [[ -n "$cmdline" ]] || return 1
+  [[ "$cmdline" == *"chromium"* || "$cmdline" == *"chrome"* ]] || return 1
+  [[ "$cmdline" == *"$SESSION_DIR/profile"* ]] || return 1
+
+  return 0
 }

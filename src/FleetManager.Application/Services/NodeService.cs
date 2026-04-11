@@ -85,7 +85,7 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
             Status = CommandStatus.Pending
         };
 
-        node.Commands.Add(command);
+        await nodeRepository.AddCommandAsync(command, cancellationToken);
         await nodeRepository.SaveChangesAsync(cancellationToken);
         return command.Id;
     }
