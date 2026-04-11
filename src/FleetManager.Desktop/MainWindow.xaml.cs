@@ -187,6 +187,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void StopAccount_Click(object sender, RoutedEventArgs e)
+    {
+        var account = GetAccountFromSender(sender);
+        if (account is not null)
+        {
+            await RunUiActionAsync(() => _viewModel.StopAccountAsync(account));
+        }
+    }
+
     private async void EditAccount_Click(object sender, RoutedEventArgs e)
     {
         var account = GetAccountFromSender(sender);

@@ -87,12 +87,14 @@
         </Style>
 
         <ContextMenu x:Key="AccountRowContextMenu" DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="#162532" BorderBrush="#2C3A43" Foreground="#F8F5F1">
-            <MenuItem Header="Start" Click="StartAccount_Click" />
-            <MenuItem Header="Edit Account" Click="EditAccount_Click" />
-            <MenuItem Header="Remote Viewer Browser" Click="RemoteViewer_Click" />
-            <MenuItem Header="Open Logs" Click="OpenLogs_Click" />
-            <Separator />
-            <MenuItem Header="Delete Account" Click="DeleteAccount_Click" />
+            <MenuItem Header="▶  Start Browser" Click="StartAccount_Click" />
+            <MenuItem Header="⏹  Stop Browser" Click="StopAccount_Click" />
+            <Separator Background="#2C3A43" />
+            <MenuItem Header="🖥  Remote Viewer" Click="RemoteViewer_Click" />
+            <MenuItem Header="📋  View Logs" Click="OpenLogs_Click" />
+            <MenuItem Header="✏  Edit Account" Click="EditAccount_Click" />
+            <Separator Background="#2C3A43" />
+            <MenuItem Header="🗑  Delete Account" Click="DeleteAccount_Click" Foreground="#FFB1B1" />
         </ContextMenu>
     </Window.Resources>
     <Grid>
@@ -276,6 +278,7 @@
                                                     <DataTemplate>
                                                         <StackPanel Orientation="Horizontal">
                                                             <TextBlock Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontWeight="Bold" Text="{Binding Name}" />
+                                                            <TextBlock Margin="6,0,0,0" Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontSize="11" Opacity="0.7" Text="{Binding IpAddress}" />
                                                             <TextBlock Margin="8,0,0,0" Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}" FontSize="11" Text="{Binding AssignedAccountCount, StringFormat={}({0})}" />
                                                         </StackPanel>
                                                     </DataTemplate>
@@ -301,11 +304,12 @@
                                             </Border>
                                             <DataGrid Grid.Row="3" Margin="0,14,0,0" RowStyle="{StaticResource AccountRowStyle}" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}">
                                                 <DataGrid.Columns>
-                                                    <DataGridTextColumn Header="ID" Binding="{Binding AccountCode}" Width="90" />
-                                                    <DataGridTemplateColumn Header="EMAIL" Width="2.5*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                                    <DataGridTemplateColumn Header="STATUS" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border HorizontalAlignment="Left" Background="{Binding StatusBadgeBackground}" CornerRadius="10" Padding="12,5"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="2.*" />
-                                                    <DataGridTemplateColumn Header="ACTION" Width="1.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="ID" Binding="{Binding AccountCode}" Width="70" />
+                                                    <DataGridTemplateColumn Header="EMAIL" Width="2.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="VPS" Binding="{Binding NodeDisplayName}" Width="1.2*" />
+                                                    <DataGridTemplateColumn Header="STATUS" Width="1*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border HorizontalAlignment="Left" Background="{Binding StatusBadgeBackground}" CornerRadius="10" Padding="12,5"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="1.8*" />
+                                                    <DataGridTemplateColumn Header="ACTION" Width="1*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                                 </DataGrid.Columns>
                                             </DataGrid>
                                         </Grid>

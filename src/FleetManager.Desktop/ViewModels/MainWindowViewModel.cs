@@ -374,6 +374,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     public Task StartAccountAsync(AccountCardViewModel account)
         => DispatchAccountCommandAsync(account, "StartBrowser");
 
+    public Task StopAccountAsync(AccountCardViewModel account)
+        => DispatchAccountCommandAsync(account, "StopBrowser");
+
     public async Task OpenRemoteViewerAsync(AccountCardViewModel account)
     {
         var commandId = await _dataService.DispatchNodeCommandAsync(account.NodeId, new DispatchNodeCommandRequest
