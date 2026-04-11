@@ -450,6 +450,26 @@ public sealed class MainWindowViewModel : ViewModelBase
             throw new InvalidOperationException("Command dispatch failed.");
         }
 
+        if (ShouldWaitForCommandCompletion(commandType))
+        {
+            var command = await WaitForCommandResultAsync(account.NodeId, commandId.Value);
+            if (command is null)
+            {
+                throw new InvalidOperationException($"{commandType} did not return a status update.");
+            }
+
+            if (command.Status is "Failed" or "TimedOut")
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(command.ResultMessage)
+                    ? $"{commandType} failed for {account.Email}."
+                    : command.ResultMessage);
+            }
+
+            await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
+            StatusMessage = $"{commandType} executed for {account.Email} | {SourceBanner}";
+            return;
+        }
+
         await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
         StatusMessage = $"Queued {commandType} for {account.Email} | {SourceBanner}";
     }
@@ -461,6 +481,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             throw new InvalidOperationException("Select one account or check multiple rows first.");
         }
+
+        var successCount = 0;
+        var failedAccounts = new List<string>();
 
         foreach (var account in targets)
         {
@@ -474,11 +497,38 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 throw new InvalidOperationException($"Command dispatch failed for {account.Email}.");
             }
+
+            if (ShouldWaitForCommandCompletion(commandType))
+            {
+                var command = await WaitForCommandResultAsync(account.NodeId, commandId.Value);
+                if (command is null || command.Status is "Failed" or "TimedOut")
+                {
+                    failedAccounts.Add(account.Email);
+                    continue;
+                }
+            }
+
+            successCount++;
         }
 
         await ReloadAsync(SelectedNode?.NodeId, targets.Count == 1 ? targets[0].AccountId : null);
-        StatusMessage = $"{actionLabel} queued for {targets.Count} account(s) | {SourceBanner}";
+
+        if (failedAccounts.Count > 0)
+        {
+            var failedPreview = string.Join(", ", failedAccounts.Take(3));
+            var suffix = failedAccounts.Count > 3 ? "..." : string.Empty;
+            throw new InvalidOperationException($"{actionLabel}: {successCount} succeeded, {failedAccounts.Count} failed ({failedPreview}{suffix}).");
+        }
+
+        StatusMessage = ShouldWaitForCommandCompletion(commandType)
+            ? $"{actionLabel} executed for {successCount} account(s) | {SourceBanner}"
+            : $"{actionLabel} queued for {targets.Count} account(s) | {SourceBanner}";
     }
+
+    private static bool ShouldWaitForCommandCompletion(string commandType)
+        => string.Equals(commandType, "StartBrowser", StringComparison.Ordinal)
+           || string.Equals(commandType, "StopBrowser", StringComparison.Ordinal)
+           || string.Equals(commandType, "OpenAssignedSession", StringComparison.Ordinal);
 
     private async Task LoadNodesAsync()
     {
