@@ -49,7 +49,15 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-await app.Services.SeedDemoDataAsync();
+var shouldSeedDemoData = builder.Configuration.GetValue<bool>("SeedDemoData");
+if (shouldSeedDemoData)
+{
+    await app.Services.SeedDemoDataAsync();
+}
+else
+{
+    await app.Services.PurgeDemoDataAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
