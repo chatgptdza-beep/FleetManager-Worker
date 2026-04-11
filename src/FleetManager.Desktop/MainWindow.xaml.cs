@@ -335,6 +335,27 @@ public partial class MainWindow : Window
         Clipboard.SetText(installCommand);
     }
 
+    private async void DeleteVps_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedNode is null)
+        {
+            MessageBox.Show(this, "No VPS is selected.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var confirmed = MessageBox.Show(
+            this,
+            $"Delete VPS '{_viewModel.SelectedNode.Name}'?\n\nThis will permanently remove this node and all its associated accounts from the server.",
+            "FleetManager",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmed == MessageBoxResult.Yes)
+        {
+            await RunUiActionAsync(() => _viewModel.DeleteNodeAsync(_viewModel.SelectedNode.NodeId));
+        }
+    }
+
     private static AccountCardViewModel? GetAccountFromSender(object sender)
         => sender is FrameworkElement element ? element.DataContext as AccountCardViewModel : null;
 

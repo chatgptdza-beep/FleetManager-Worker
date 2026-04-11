@@ -35,6 +35,9 @@ public sealed class OfflineDashboardDataService : IDashboardDataService
     public Task<bool> DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
 
+    public Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
     public Task<Guid?> DispatchNodeCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult<Guid?>(null);
 

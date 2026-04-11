@@ -16,6 +16,7 @@ public interface IDashboardDataService
     Task<AccountSummaryResponse> CreateAccountAsync(CreateAccountRequest request, CancellationToken cancellationToken = default);
     Task<AccountSummaryResponse?> UpdateAccountAsync(Guid accountId, UpdateAccountRequest request, CancellationToken cancellationToken = default);
     Task<bool> DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken = default);
+    Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default);
     Task<Guid?> DispatchNodeCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default);
     Task<NodeCommandStatusResponse?> GetNodeCommandStatusAsync(Guid nodeId, Guid commandId, CancellationToken cancellationToken = default);
 }

@@ -188,6 +188,22 @@ public sealed class DashboardDataService : IDashboardDataService
         }
     }
 
+    public async Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await EnsureAuthenticatedAsync(cancellationToken);
+            using var response = await _httpClient.DeleteAsync($"api/nodes/{nodeId}", cancellationToken);
+            CurrentModeLabel = "API mode";
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
+        {
+            CurrentModeLabel = _fallback.CurrentModeLabel;
+            return await _fallback.DeleteNodeAsync(nodeId, cancellationToken);
+        }
+    }
+
     public async Task<Guid?> DispatchNodeCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default)
     {
         try

@@ -240,7 +240,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             SelectedNode = ResolveSelectedNode(preferredNodeId);
             await LoadAccountsForSelectedNodeAsync(preferredAccountId);
-            StatusMessage = SourceBanner;
+            StatusMessage = $"{_dataService.CurrentModeLabel} | {Nodes.Count} nodes, {TotalAccountCount} accounts | {_dataService.CurrentBaseUrl}";
         }
         finally
         {
@@ -291,7 +291,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
             await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"Live: {status} | {SourceBanner}";
+            StatusMessage = $"⚡ Live: {status}";
         });
     }
 
@@ -301,7 +301,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             _viewerSessions[accountId] = new ViewerSessionInfo(vncUrl, $"Manual takeover ready: {vncUrl}");
             await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"Live: Manual required | {SourceBanner}";
+            StatusMessage = $"⚡ Live: Manual required for account";
         });
     }
 
@@ -310,8 +310,22 @@ public sealed class MainWindowViewModel : ViewModelBase
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
             await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"Live: Proxy rotated (index {newIndex}) | {SourceBanner}";
+            StatusMessage = $"⚡ Live: Proxy rotated (index {newIndex})";
         });
+    }
+
+    public async Task DeleteNodeAsync(Guid nodeId)
+    {
+        var deleted = await _dataService.DeleteNodeAsync(nodeId);
+        if (deleted)
+        {
+            await ReloadAsync();
+            StatusMessage = "VPS node deleted successfully";
+        }
+        else
+        {
+            StatusMessage = "Failed to delete VPS node";
+        }
     }
 
     public async Task CreateAccountAsync(CreateAccountRequest request)
