@@ -100,13 +100,11 @@ public class ContainerMonitor : BackgroundService
         client.DefaultRequestHeaders.Add("X-Api-Key", _settings.ApiKey ?? "MASTER-KEY-12345");
 
         var payload = new { Reason = "429 Rate Limit" };
-        var response = await client.PostAsJsonAsync($"/api/accounts/{accountId}/proxies/rotate", payload, cancellationToken);
-        
-        if (response.IsSuccessStatusCode)
-        {
-            _logger.LogInformation("Proxy rotated successfully for account {AccountId}.", accountId);
-            // It will be restarted by the API/Operations hub sending a new StartBrowser command
-        }
+        using var response = await client.PostAsJsonAsync($"/api/accounts/{accountId}/proxies/rotate", payload, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        _logger.LogInformation("Proxy rotated successfully for account {AccountId}.", accountId);
+        // It will be restarted by the API/Operations hub sending a new StartBrowser command.
     }
 
     private async Task RequestManualTakeoverAsync(Guid accountId, CancellationToken cancellationToken)
@@ -119,6 +117,7 @@ public class ContainerMonitor : BackgroundService
         string vncUrl = $"http://{_settings.NodeIpAddress}:{_settings.ControlPort}/vnc.html";
         var payload = new { VncUrl = vncUrl };
 
-        await client.PostAsJsonAsync($"/api/accounts/{accountId}/proxies/takeover-request", payload, cancellationToken);
+        using var response = await client.PostAsJsonAsync($"/api/accounts/{accountId}/manual-required", payload, cancellationToken);
+        response.EnsureSuccessStatusCode();
     }
 }

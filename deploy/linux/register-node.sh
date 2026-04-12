@@ -6,6 +6,7 @@ usage() {
 Usage:
   register-node.sh \
     --api https://api.example.com \
+    --admin-password "$FLEETMANAGER_API_PASSWORD" \
     --name VPS-01 \
     --ip 10.0.0.21 \
     --ssh-user fleetmgr \
@@ -26,10 +27,12 @@ REGION=""
 SSH_PORT="22"
 CONTROL_PORT="9001"
 APPSETTINGS_PATH=""
+ADMIN_PASSWORD="${FLEETMANAGER_API_PASSWORD:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --api) API_URL="$2"; shift 2 ;;
+    --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --ip) IP_ADDRESS="$2"; shift 2 ;;
     --ssh-user) SSH_USER="$2"; shift 2 ;;
@@ -51,6 +54,11 @@ for value_name in API_URL NAME IP_ADDRESS SSH_USER; do
   fi
 done
 
+if [[ -z "$ADMIN_PASSWORD" ]]; then
+  echo "Missing admin password. Pass --admin-password or set FLEETMANAGER_API_PASSWORD." >&2
+  exit 1
+fi
+
 payload="$(python3 - <<PY
 import json
 print(json.dumps({
@@ -66,9 +74,38 @@ print(json.dumps({
 PY
 )"
 
+auth_response_file="$(mktemp)"
+auth_payload="$(python3 - <<PY
+import json
+print(json.dumps({
+  "password": ${ADMIN_PASSWORD@Q}
+}))
+PY
+)"
+auth_http_code="$(curl -sS -o "$auth_response_file" -w "%{http_code}" \
+  -H 'Content-Type: application/json' \
+  -X POST "${API_URL%/}/api/auth/token" \
+  -d "$auth_payload")"
+
+if [[ "$auth_http_code" != "200" ]]; then
+  echo "Authentication failed. HTTP $auth_http_code" >&2
+  cat "$auth_response_file" >&2
+  rm -f "$auth_response_file"
+  exit 1
+fi
+
+auth_token="$(python3 - "$auth_response_file" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+print(data["token"])
+PY
+)"
+
 response_file="$(mktemp)"
 http_code="$(curl -sS -o "$response_file" -w "%{http_code}" \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $auth_token" \
   -X POST "${API_URL%/}/api/nodes" \
   -d "$payload")"
 
@@ -90,14 +127,19 @@ PY
 echo "Registered node: $node_id"
 
 if [[ -n "$APPSETTINGS_PATH" ]]; then
-  python3 - "$APPSETTINGS_PATH" "$node_id" "$API_URL" <<'PY'
+  python3 - "$APPSETTINGS_PATH" "$node_id" "$API_URL" "$IP_ADDRESS" <<'PY'
 import json, sys
-path, node_id, api_url = sys.argv[1:]
+import os
+path, node_id, api_url, node_ip = sys.argv[1:]
 with open(path, 'r', encoding='utf-8') as fh:
     data = json.load(fh)
 data.setdefault("Agent", {})
 data["Agent"]["NodeId"] = node_id
 data["Agent"]["BackendBaseUrl"] = api_url
+data["Agent"]["NodeIpAddress"] = node_ip
+agent_api_key = os.environ.get("FLEETMANAGER_AGENT_API_KEY")
+if agent_api_key:
+    data["Agent"]["ApiKey"] = agent_api_key
 with open(path, 'w', encoding='utf-8') as fh:
     json.dump(data, fh, indent=2)
     fh.write("\n")
@@ -105,4 +147,5 @@ PY
   echo "Updated agent appsettings: $APPSETTINGS_PATH"
 fi
 
+rm -f "$auth_response_file"
 rm -f "$response_file"

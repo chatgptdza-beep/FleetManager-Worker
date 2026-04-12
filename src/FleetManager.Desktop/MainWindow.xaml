@@ -68,7 +68,12 @@
             </Setter>
         </Style>
 
-        <ContextMenu x:Key="AccountRowContextMenu" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" Foreground="#F8F5F1">
+        <ContextMenu x:Key="AccountRowContextMenu"
+                     DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                     Background="#162532"
+                     BorderBrush="#2C3A43"
+                     BorderThickness="1"
+                     Foreground="#F8F5F1">
             <ContextMenu.Template>
                 <ControlTemplate TargetType="ContextMenu">
                     <Border Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="4" Padding="0,8">
@@ -109,6 +114,8 @@
             
             <MenuItem Header="Start" Click="StartAccount_Click" InputGestureText="Enter" />
             <MenuItem Header="Edit Account" Click="EditAccount_Click" InputGestureText="F2" />
+            <MenuItem Header="Inject Proxies" Click="InjectProxies_Click" InputGestureText="Ctrl+P" />
+            <MenuItem Header="Rotate Proxy Now" Click="RotateProxyNow_Click" InputGestureText="Ctrl+Shift+P" />
             <MenuItem Header="Remote Viewer Browser" Click="RemoteViewer_Click" InputGestureText="Ctrl+R" />
             <Separator Background="#2C3A43" Margin="0,8,0,8" />
             <MenuItem Header="Delete Account" Click="DeleteAccount_Click" Foreground="#FF8A8A" InputGestureText="Del" />
@@ -153,6 +160,7 @@
                                         <TextBlock Margin="0,12,0,0" Foreground="#B9C4CD" Text="{Binding ProfilesLoadedLabel, StringFormat=Profiles loaded: {0}}" />
                                         <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ConnectedNodesSummary, StringFormat=Connected nodes: {0}}" />
                                         <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding ManualQueueLabel, StringFormat=Manual takeover: {0}}" />
+                                        <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding WorkerInboxLabel, StringFormat=Worker inbox: {0}}" />
                                         <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" Text="{Binding AveragePingLabel, StringFormat=Average latency: {0}}" />
                                     </StackPanel>
                                 </Border>
@@ -342,11 +350,12 @@
                                             <DataGrid Grid.Row="3" Margin="0,14,0,0" RowStyle="{StaticResource AccountRowStyle}" ItemsSource="{Binding Accounts}" SelectedItem="{Binding SelectedAccount, Mode=TwoWay}">
                                                 <DataGrid.Columns>
                                                     <DataGridTextColumn Header="ID" Binding="{Binding AccountCode}" Width="70" />
-                                                    <DataGridTemplateColumn Header="EMAIL" Width="2.2*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="VPS" Binding="{Binding NodeDisplayName}" Width="1.2*" />
-                                                    <DataGridTemplateColumn Header="STATUS" Width="1*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border HorizontalAlignment="Left" Background="{Binding StatusBadgeBackground}" CornerRadius="10" Padding="12,5"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
-                                                    <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="1.8*" />
-                                                    <DataGridTemplateColumn Header="ACTION" Width="1*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTemplateColumn Header="EMAIL" Width="2.1*"><DataGridTemplateColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><CheckBox Margin="0,0,12,0" VerticalAlignment="Center" IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="AccountCheckBox_Click" Foreground="#F8F5F1" /><StackPanel><TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" /><TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" Text="{Binding SecondaryIdentity}" /></StackPanel></StackPanel></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="VPS" Binding="{Binding NodeDisplayName}" Width="1.1*" />
+                                                    <DataGridTextColumn Header="PROXY" Binding="{Binding ProxyIndexLabel}" Width="0.75*" />
+                                                    <DataGridTemplateColumn Header="STATUS" Width="0.95*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Border HorizontalAlignment="Left" Background="{Binding StatusBadgeBackground}" CornerRadius="10" Padding="12,5"><TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" /></Border></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
+                                                    <DataGridTextColumn Header="RECENT LOG" Binding="{Binding RecentLogSummary}" Width="1.65*" />
+                                                    <DataGridTemplateColumn Header="ACTION" Width="0.95*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="100" Background="{Binding ActionBackground}" BorderBrush="{Binding ActionBorderBrush}" Foreground="{Binding ActionForeground}" Click="InlineAction_Click" Content="{Binding ActionLabel}" /></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn>
                                                 </DataGrid.Columns>
                                             </DataGrid>
                                         </Grid>
@@ -367,6 +376,39 @@
                                                             <Button Margin="0,0,10,0" Style="{StaticResource GhostButtonStyle}" Height="32" Click="OpenViewerUrl_Click" Content="Open Viewer" />
                                                             <Button Style="{StaticResource GhostButtonStyle}" Height="32" Click="CopyViewerUrl_Click" Content="Copy URL" />
                                                         </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <Border Grid.Row="2" Margin="0,14,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                    <StackPanel>
+                                                        <DockPanel>
+                                                            <StackPanel>
+                                                                <TextBlock Foreground="#F8F5F1" FontWeight="Bold" Text="Proxy Pool" />
+                                                                <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" FontSize="11" Text="{Binding FocusedProxySummary}" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                                                <Button Margin="0,0,10,0" Style="{StaticResource GhostButtonStyle}" Height="32" Click="FocusedInjectProxies_Click" Content="Inject Proxies" />
+                                                                <Button Style="{StaticResource GhostButtonStyle}" Height="32" Click="FocusedRotateProxyNow_Click" Content="Rotate Now" />
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                        <TextBlock Margin="0,14,0,0" Foreground="#8FA0AA" FontSize="11" Text="{Binding FocusedProxyRotationSummary}" />
+                                                        <TextBlock Margin="0,10,0,0" Foreground="#8FA0AA" Visibility="{Binding FocusedProxyHistoryEmptyVisibility}" Text="No proxy rotations have been recorded for this account yet." />
+                                                        <ItemsControl Margin="0,10,0,0" ItemsSource="{Binding FocusedProxyRotations}" Visibility="{Binding FocusedProxyHistoryVisibility}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Margin="0,0,0,8" Padding="12" Background="#18242E" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
+                                                                        <Grid>
+                                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                                            <StackPanel>
+                                                                                <TextBlock Foreground="#F8F5F1" FontWeight="SemiBold" Text="{Binding SlotSummary}" />
+                                                                                <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="11" Text="{Binding Reason}" TextWrapping="Wrap" />
+                                                                            </StackPanel>
+                                                                            <TextBlock Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Top" Foreground="#8FA0AA" FontSize="11" Text="{Binding TimestampLabel}" />
+                                                                        </Grid>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
                                                     </StackPanel>
                                                 </Border>
 
@@ -525,7 +567,13 @@
 
                                 <!-- ──────── MANUAL QUEUE VIEW ──────── -->
                                 <Grid Visibility="{Binding ManualQueueViewVisibility}">
-                                    <Border Style="{StaticResource PanelStyle}" Margin="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.15*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="0.95*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
                                         <Grid>
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
@@ -536,43 +584,122 @@
                                                 <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Manual Queue" />
                                                 <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,0,0" Text="Accounts waiting for operator intervention" />
                                             </Grid>
-                                            
-                                            <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="14"
-                                                       Visibility="{Binding ManualQueueEmptyVisibility}"
-                                                       Text="No accounts currently require manual attention." />
-                                            
-                                            <ScrollViewer Grid.Row="1" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
-                                                <ItemsControl ItemsSource="{Binding ManualQueueAccounts}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border Margin="0,0,0,12" Padding="18" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
-                                                                <Grid>
-                                                                    <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="*" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                    </Grid.ColumnDefinitions>
-                                                                    <StackPanel>
-                                                                        <DockPanel>
-                                                                            <TextBlock Foreground="#F8F5F1" FontSize="15" FontWeight="Bold" Text="{Binding DisplayName}" />
-                                                                            <Border DockPanel.Dock="Right" Margin="12,0,0,0" Background="{Binding StatusBadgeBackground}" CornerRadius="999" Padding="10,4">
-                                                                                <TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" />
+
+                                            <Grid Grid.Row="1" Margin="0,14,0,0">
+                                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="14"
+                                                           Visibility="{Binding ManualQueueEmptyVisibility}"
+                                                           Text="No accounts currently require manual attention." />
+
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding ManualQueueAccounts}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,12" Padding="18" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <StackPanel>
+                                                                            <DockPanel>
+                                                                                <TextBlock Foreground="#F8F5F1" FontSize="15" FontWeight="Bold" Text="{Binding DisplayName}" />
+                                                                                <Border DockPanel.Dock="Right" Margin="12,0,0,0" Background="{Binding StatusBadgeBackground}" CornerRadius="999" Padding="10,4">
+                                                                                    <TextBlock Foreground="{Binding StatusBadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding Status}" />
+                                                                                </Border>
+                                                                            </DockPanel>
+                                                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" Text="{Binding StatusSummary}" />
+                                                                            <Border Margin="0,8,0,0" Padding="10" Background="#4B2025" BorderBrush="#FFB1B1" BorderThickness="1" CornerRadius="10">
+                                                                                <TextBlock Foreground="#FFB1B1" FontSize="12" TextWrapping="Wrap" Text="{Binding ActiveAlertSummary}" />
                                                                             </Border>
-                                                                        </DockPanel>
-                                                                        <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" Text="{Binding StatusSummary}" />
-                                                                        <Border Margin="0,8,0,0" Padding="10" Background="#4B2025" BorderBrush="#FFB1B1" BorderThickness="1" CornerRadius="10">
-                                                                            <TextBlock Foreground="#FFB1B1" FontSize="12" TextWrapping="Wrap" Text="{Binding ActiveAlertSummary}" />
+                                                                        </StackPanel>
+                                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
+                                                                            <Button Margin="0,0,0,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueViewBrowser_Click" Content="View Browser" HorizontalContentAlignment="Center" />
+                                                                            <Button Style="{StaticResource GhostButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueBringToFront_Click" Content="Bring to Front" HorizontalContentAlignment="Center" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <Grid>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto" />
+                                                <RowDefinition Height="*" />
+                                            </Grid.RowDefinitions>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Worker Inbox" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" FontSize="11" Text="{Binding WorkerInboxModeSummary}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" HorizontalAlignment="Right" TextAlignment="Right" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="11" Margin="10,0,20,0" Text="{Binding WorkerInboxLabel, StringFormat=Pending events: {0}}" />
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                                    <Button Margin="0,0,8,0" Style="{StaticResource GhostButtonStyle}" Height="32" Click="WorkerInboxPending_Click" Content="Pending" />
+                                                    <Button Style="{StaticResource GhostButtonStyle}" Height="32" Click="WorkerInboxHistory_Click" Content="History" />
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <Grid Grid.Row="1" Margin="0,14,0,0">
+                                                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="14"
+                                                           Visibility="{Binding WorkerInboxEmptyVisibility}"
+                                                           Text="{Binding WorkerInboxEmptyMessage}" />
+
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding WorkerInboxEvents}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,12" Padding="18" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="18">
+                                                                    <Grid>
+                                                                        <Grid.RowDefinitions>
+                                                                            <RowDefinition Height="Auto" />
+                                                                            <RowDefinition Height="Auto" />
+                                                                            <RowDefinition Height="Auto" />
+                                                                        </Grid.RowDefinitions>
+                                                                        <Grid>
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="*" />
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <StackPanel>
+                                                                                <DockPanel>
+                                                                                    <TextBlock Foreground="#F8F5F1" FontSize="15" FontWeight="Bold" Text="{Binding Title}" />
+                                                                                    <Border DockPanel.Dock="Right" Margin="12,0,0,0" Background="{Binding BadgeBackground}" CornerRadius="999" Padding="10,4">
+                                                                                        <TextBlock Foreground="{Binding BadgeForeground}" FontSize="11" FontWeight="Bold" Text="{Binding BadgeText}" />
+                                                                                    </Border>
+                                                                                </DockPanel>
+                                                                                <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" FontSize="12" Text="{Binding SourceLabel}" />
+                                                                                <TextBlock Margin="0,4,0,0" Foreground="#8FA0AA" FontSize="11" Text="{Binding StatusLabel}" />
+                                                                            </StackPanel>
+                                                                            <TextBlock Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Top" Foreground="#8FA0AA" FontSize="11" Text="{Binding TimestampLabel}" />
+                                                                        </Grid>
+                                                                        <Border Grid.Row="1" Margin="0,12,0,0" Padding="12" Background="#18242E" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
+                                                                            <TextBlock Foreground="#D7E0E7" FontSize="12" TextWrapping="Wrap" Text="{Binding Message}" />
                                                                         </Border>
-                                                                    </StackPanel>
-                                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
-                                                                        <Button Margin="0,0,0,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueViewBrowser_Click" Content="View Browser" HorizontalContentAlignment="Center" />
-                                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="36" MinWidth="130" Click="ManualQueueBringToFront_Click" Content="Bring to Front" HorizontalContentAlignment="Center" />
-                                                                    </StackPanel>
-                                                                </Grid>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                            </ScrollViewer>
+                                                                        <StackPanel Grid.Row="2" Margin="0,14,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                            <Button Style="{StaticResource GhostButtonStyle}" Height="34" MinWidth="110" Margin="0,0,10,0"
+                                                                                    Visibility="{Binding ActionButtonVisibility}"
+                                                                                    Click="WorkerInboxOpen_Click"
+                                                                                    Content="Open Link"
+                                                                                    HorizontalContentAlignment="Center" />
+                                                                            <Button Style="{StaticResource PrimaryButtonStyle}" Height="34" MinWidth="120"
+                                                                                    Visibility="{Binding AcknowledgeButtonVisibility}"
+                                                                                    Click="WorkerInboxAcknowledge_Click"
+                                                                                    Content="Acknowledge"
+                                                                                    HorizontalContentAlignment="Center" />
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                            </Grid>
                                         </Grid>
                                     </Border>
                                 </Grid>

@@ -1,4 +1,5 @@
 using FleetManager.Api.Hubs;
+using FleetManager.Api.Services;
 using FleetManager.Application.Abstractions;
 using FleetManager.Contracts.Accounts;
 using Microsoft.AspNetCore.Authorization;
@@ -12,11 +13,19 @@ namespace FleetManager.Api.Controllers;
 [Route("api/accounts")]
 public sealed class AccountsController(
     IAccountService accountService,
-    IHubContext<OperationsHub, IOperationsClient> hub) : ControllerBase
+    IHubContext<OperationsHub, IOperationsClient> hub,
+    IAccountAutomationCoordinator automationCoordinator) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<AccountSummaryResponse>>> GetAsync([FromQuery] Guid? nodeId, CancellationToken cancellationToken)
         => Ok(await accountService.GetAccountsAsync(nodeId, cancellationToken));
+
+    [HttpGet("{accountId:guid}")]
+    public async Task<ActionResult<AccountSummaryResponse>> GetByIdAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        var account = await accountService.GetAccountAsync(accountId, cancellationToken);
+        return account is null ? NotFound() : Ok(account);
+    }
 
     [HttpPost]
     public async Task<ActionResult<AccountSummaryResponse>> CreateAsync([FromBody] CreateAccountRequest request, CancellationToken cancellationToken)
@@ -38,7 +47,6 @@ public sealed class AccountsController(
         var updated = await accountService.UpdateAccountAsync(accountId, request, cancellationToken);
         if (updated is null) return NotFound();
 
-        // Notify Desktop of status change in real time
         await hub.Clients.All.SendBotStatusChanged(accountId, updated.Status);
         return Ok(updated);
     }
@@ -58,11 +66,15 @@ public sealed class AccountsController(
     [AllowAnonymous] // Agent uses API key middleware, not JWT
     public async Task<IActionResult> ManualRequiredAsync(Guid accountId, [FromBody] ManualRequiredRequest request, CancellationToken cancellationToken)
     {
-        var updated = await accountService.SetAccountStatusManualAsync(accountId, cancellationToken);
+        var updated = await automationCoordinator.MarkManualRequiredAsync(accountId, request.VncUrl, cancellationToken);
         if (updated is null) return NotFound();
-
-        await hub.Clients.All.SendManualRequiredEvent(accountId, request.VncUrl ?? string.Empty);
-        await hub.Clients.All.SendBotStatusChanged(accountId, "ManualRequired");
         return Accepted();
+    }
+
+    [HttpPost("{accountId:guid}/manual-complete")]
+    public async Task<IActionResult> ManualCompleteAsync(Guid accountId, CancellationToken cancellationToken)
+    {
+        var updated = await automationCoordinator.CompleteManualTakeoverAsync(accountId, cancellationToken);
+        return updated is null ? NotFound() : Ok(updated);
     }
 }

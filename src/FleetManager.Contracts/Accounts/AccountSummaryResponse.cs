@@ -14,4 +14,6 @@ public sealed class AccountSummaryResponse
     public string? ActiveAlertStage { get; set; }
     public string? ActiveAlertTitle { get; set; }
     public string? ActiveAlertMessage { get; set; }
+    public int CurrentProxyIndex { get; set; }
+    public int ProxyCount { get; set; }
 }

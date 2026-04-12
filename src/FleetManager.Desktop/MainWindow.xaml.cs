@@ -72,27 +72,36 @@ public partial class MainWindow : Window
         var editor = new VpsEditorWindow { Owner = this };
         if (editor.ShowDialog() == true)
         {
-            await RunUiActionAsync(() => _viewModel.CreateNodeAsync(editor.Request));
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait; // Show loading cursor for SSH operation
+                await RunUiActionAsync(() => _viewModel.CreateNodeAsync(editor.Request));
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "Auto-Installer Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
         }
     }
 
     private async void AddAccount_Click(object sender, RoutedEventArgs e)
     {
-        if (_viewModel.SelectedNode is null)
-        {
-            await RunUiActionAsync(() => Task.FromException(new InvalidOperationException("Select a VPS tab before adding an account.")));
-            return;
-        }
+        var nodeName = _viewModel.SelectedNode?.NodeDisplayName ?? "Unassigned (Local)";
+        var nodeId = _viewModel.SelectedNode?.NodeId ?? Guid.Empty;
 
-        var editor = new AccountEditorWindow("Add Account", _viewModel.SelectedNode.NodeDisplayName) { Owner = this };
+        var editor = new AccountEditorWindow("Add Account", nodeName) { Owner = this };
         if (editor.ShowDialog() == true)
         {
             await RunUiActionAsync(() => _viewModel.CreateAccountAsync(new CreateAccountRequest
             {
-                NodeId = _viewModel.SelectedNode.NodeId,
+                NodeId = nodeId,
                 Email = editor.Email,
                 Username = editor.Username,
-                Status = "Stopped" // Default status
+                Status = "Stopped"
             }));
         }
     }
@@ -178,6 +187,48 @@ public partial class MainWindow : Window
         }
     }
 
+    private void WorkerInboxOpen_Click(object sender, RoutedEventArgs e)
+    {
+        var workerEvent = GetWorkerInboxEventFromSender(sender);
+        if (workerEvent is null || string.IsNullOrWhiteSpace(workerEvent.ActionUrl))
+        {
+            MessageBox.Show(this, "This worker event does not include an actionable link.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = workerEvent.ActionUrl,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "FleetManager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void WorkerInboxAcknowledge_Click(object sender, RoutedEventArgs e)
+    {
+        var workerEvent = GetWorkerInboxEventFromSender(sender);
+        if (workerEvent is not null)
+        {
+            await RunUiActionAsync(() => _viewModel.AcknowledgeWorkerInboxEventAsync(workerEvent));
+        }
+    }
+
+    private async void WorkerInboxPending_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(_viewModel.ShowPendingWorkerInboxAsync);
+    }
+
+    private async void WorkerInboxHistory_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(_viewModel.ShowWorkerInboxHistoryAsync);
+    }
+
     private async void StartAccount_Click(object sender, RoutedEventArgs e)
     {
         var account = GetAccountFromSender(sender);
@@ -214,6 +265,58 @@ public partial class MainWindow : Window
                 Status = account.Status // Keep existing status
             }));
         }
+    }
+
+    private async void InjectProxies_Click(object sender, RoutedEventArgs e)
+    {
+        var account = GetAccountFromSender(sender);
+        if (account is null)
+        {
+            return;
+        }
+
+        var editor = new InjectProxiesWindow(account.Email, account.ProxyCount, account.ProxyIndexLabel) { Owner = this };
+        if (editor.ShowDialog() == true)
+        {
+            await RunUiActionAsync(() => _viewModel.InjectProxiesAsync(account, editor.RawProxies, editor.ReplaceMode));
+        }
+    }
+
+    private async void RotateProxyNow_Click(object sender, RoutedEventArgs e)
+    {
+        var account = GetAccountFromSender(sender);
+        if (account is not null)
+        {
+            await RunUiActionAsync(() => _viewModel.RotateProxyNowAsync(account));
+        }
+    }
+
+    private async void FocusedInjectProxies_Click(object sender, RoutedEventArgs e)
+    {
+        var account = _viewModel.FocusedAccount ?? _viewModel.SelectedAccount;
+        if (account is null)
+        {
+            MessageBox.Show(this, "Select an account first.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var editor = new InjectProxiesWindow(account.Email, account.ProxyCount, account.ProxyIndexLabel) { Owner = this };
+        if (editor.ShowDialog() == true)
+        {
+            await RunUiActionAsync(() => _viewModel.InjectProxiesAsync(account, editor.RawProxies, editor.ReplaceMode));
+        }
+    }
+
+    private async void FocusedRotateProxyNow_Click(object sender, RoutedEventArgs e)
+    {
+        var account = _viewModel.FocusedAccount ?? _viewModel.SelectedAccount;
+        if (account is null)
+        {
+            MessageBox.Show(this, "Select an account first.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        await RunUiActionAsync(() => _viewModel.RotateProxyNowAsync(account));
     }
 
     private async void RemoteViewer_Click(object sender, RoutedEventArgs e)
@@ -263,7 +366,7 @@ public partial class MainWindow : Window
         var confirmed = MessageBox.Show(this, $"Delete account {account.Email}?", "FleetManager", MessageBoxButton.YesNo, MessageBoxImage.Warning);
         if (confirmed == MessageBoxResult.Yes)
         {
-            await RunUiActionAsync(() => _viewModel.DeleteAccountAsync(account.AccountId));
+            await RunUiActionAsync(() => _viewModel.DeleteAccountAsync(account));
         }
     }
 
@@ -370,6 +473,9 @@ public partial class MainWindow : Window
 
     private static AccountCardViewModel? GetAccountFromSender(object sender)
         => sender is FrameworkElement element ? element.DataContext as AccountCardViewModel : null;
+
+    private static WorkerInboxEventViewModel? GetWorkerInboxEventFromSender(object sender)
+        => sender is FrameworkElement element ? element.DataContext as WorkerInboxEventViewModel : null;
 
     private async Task RunUiActionAsync(Func<Task> action)
     {

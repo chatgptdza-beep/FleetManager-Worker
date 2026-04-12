@@ -13,5 +13,5 @@ public interface INodeService
     Task<NodeCommandStatusResponse?> GetCommandStatusAsync(Guid nodeId, Guid commandId, CancellationToken cancellationToken = default);
     Task<AgentCommandEnvelopeResponse?> GetNextPendingCommandAsync(Guid nodeId, CancellationToken cancellationToken = default);
     Task CompleteCommandAsync(Guid nodeId, Guid commandId, bool succeeded, string? resultMessage, CancellationToken cancellationToken = default);
-    Task UpdateHeartbeatAsync(Guid nodeId, double cpuPercent, double ramPercent, double diskPercent, double ramUsedGb, double storageUsedGb, int pingMs, int activeSessions, int controlPort, string connectionState, int connectionTimeoutSeconds, string agentVersion, CancellationToken cancellationToken = default);
+    Task<NodeSummaryResponse> UpdateHeartbeatAsync(Guid nodeId, double cpuPercent, double ramPercent, double diskPercent, double ramUsedGb, double storageUsedGb, int pingMs, int activeSessions, int controlPort, string connectionState, int connectionTimeoutSeconds, string agentVersion, CancellationToken cancellationToken = default);
 }

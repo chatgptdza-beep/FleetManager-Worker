@@ -1,136 +1,173 @@
-# FleetManager — VPS Agent & Browser Automation Fleet
+# FleetManager - VPS Agent and Browser Automation Fleet
 
-A self-hosted browser automation fleet management system. Controls up to **200 accounts** across **4 Linux VPS nodes** (50 per node) with smart proxy rotation, anti-detect Chromium, and real-time noVNC operator takeover.
+FleetManager is a self-hosted control plane for browser automation workers running on Linux VPS nodes. The current solution contains:
 
-## Architecture
+- `FleetManager.Api` for REST, SignalR, auth, and orchestration.
+- `FleetManager.Agent` for heartbeat, command polling, and node-side execution.
+- `FleetManager.Desktop` for the operator dashboard and node provisioning.
+- `FleetManager.Infrastructure` for EF Core persistence and repositories.
+- `FleetManager.Api.Tests` for unit and integration coverage.
 
+## Current Direction
+
+The codebase now follows these rules:
+
+- The API is the source of truth for accounts, commands, node state, and proxy rotation.
+- Desktop demo data is explicit demo mode, not a silent fallback for failed writes.
+- Agent control routes accept operator JWT or machine API key.
+- Node command dequeue is atomic on relational databases.
+- Desktop updates node state incrementally from SignalR instead of always forcing a full reload.
+- Closing the Desktop app does not stop the VPS worker. The agent keeps polling, heartbeating, and reacting to server-side commands independently.
+- Manual takeover events are persisted in the API as alerts and workflow stages, so the Desktop can recover pending VNC links after it is opened again.
+- Worker-side events that happen while the Desktop is closed are stored in a server-side worker inbox and shown after the operator reconnects.
+- Account rows now support right-click proxy injection from the Desktop, with proxy pool updates synchronized back through the API.
+- Proxy injection accepts a `.txt` list loaded from the Desktop UI using one proxy per line in either `ip:port` or `ip:port:user:password` format.
+
+## Local Development
+
+### Required configuration
+
+Set these before running the API outside development defaults:
+
+```powershell
+$env:ConnectionStrings__DefaultConnection = "Host=localhost;Database=FleetManagerDb;Username=postgres;Password=postgres"
+$env:Jwt__Key = "<32+ char secret>"
+$env:AdminPassword = "<operator password>"
+$env:AgentApiKey = "<agent api key>"
 ```
-[Desktop WPF App] <──SignalR/REST──> [ASP.NET Core API] <──polling──> [VPS Agent]
-                                                                              │
-                                                                   [Docker Containers]
-                                                                 (Chromium + Playwright
-                                                                  + Xvfb + noVNC)
+
+Optional:
+
+```powershell
+$env:Cors__AllowedOrigins__0 = "https://ops.example.com"
+$env:SeedDemoData = "false"
 ```
 
----
+Desktop-specific overrides:
 
-## Quick Start — Install Agent on Ubuntu 22.04
+```powershell
+$env:FLEETMANAGER_API_BASE_URL = "http://localhost:5188/"
+$env:FLEETMANAGER_API_PASSWORD = "<operator password>"
+$env:FLEETMANAGER_AGENT_API_KEY = "<agent api key>"
+$env:FLEETMANAGER_DESKTOP_DEMO_MODE = "false"
+```
 
-### 1. Publish Agent
+### Build and test
+
+```powershell
+dotnet build FleetManager.sln
+dotnet test FleetManager.sln
+```
+
+## Agent Packaging
+
+Publish a Linux package locally before provisioning a node from the Desktop app:
+
+```powershell
+.\scripts\publish-agent.ps1
+```
+
+This writes the package to `out/agent`, which the Desktop SSH installer now prefers automatically.
+The publish step also writes `.fleetmanager.sha256`, and the Linux installer verifies that manifest before copying files into `/opt/fleetmanager-agent`.
+
+Manual publish example:
+
+```powershell
+dotnet publish .\src\FleetManager.Agent\FleetManager.Agent.csproj `
+  -c Release `
+  -r linux-x64 `
+  --self-contained `
+  -o .\out\agent
+```
+
+## Ubuntu Node Install
+
+### 1. Publish agent
+
+```powershell
+.\scripts\publish-agent.ps1
+```
+
+### 2. Copy files to the VPS
+
 ```bash
-dotnet publish src/FleetManager.Agent/FleetManager.Agent.csproj \
-  -c Release -r linux-x64 --self-contained -o /tmp/fleet-agent-publish
+scp -r out/agent user@VPS_IP:/tmp/fleetmanager-agent
+scp -r deploy/linux user@VPS_IP:/tmp/fleetmanager-deploy
 ```
 
-### 2. Copy to VPS & Install
+### 3. Install the service
+
 ```bash
-scp -r /tmp/fleet-agent-publish user@VPS_IP:/tmp/fleetmanager-agent
-scp -r deploy/linux user@VPS_IP:/tmp/fleet-deploy
-ssh user@VPS_IP "sudo bash /tmp/fleet-deploy/install-worker-ubuntu.sh /tmp/fleetmanager-agent"
+ssh user@VPS_IP "sudo bash /tmp/fleetmanager-deploy/install-worker-ubuntu.sh /tmp/fleetmanager-agent"
 ```
 
-### 3. Register Node
+### 4. Register the node
+
 ```bash
 bash deploy/linux/register-node.sh \
   --api https://your-api.example.com \
-  --name VPS-01 --ip 10.0.0.21 \
-  --ssh-user fleetmgr --os Ubuntu --region eu-west
+  --admin-password '<operator password>' \
+  --name VPS-01 \
+  --ip 10.0.0.21 \
+  --ssh-user fleetmgr \
+  --os Ubuntu \
+  --region eu-west
 ```
 
-### 4. Configure `appsettings.json` on VPS
+### 5. Configure appsettings on the VPS if needed
+
+The worker reads `/opt/fleetmanager-agent/appsettings.json`.
+
+Example:
+
 ```json
 {
   "Agent": {
-    "NodeId": "<GUID from register-node.sh>",
+    "NodeId": "00000000-0000-0000-0000-000000000000",
     "BackendBaseUrl": "https://your-api.example.com",
-    "ApiKey": "<your-secret-api-key>",
+    "ApiKey": "<agent api key>",
     "HeartbeatIntervalSeconds": 15,
     "CommandPollIntervalSeconds": 3,
-    "CommandScriptsPath": "/opt/fleetmanager-agent/commands"
+    "AgentVersion": "1.0.0",
+    "ControlPort": 9001,
+    "ConnectionState": "Connected",
+    "ConnectionTimeoutSeconds": 5,
+    "CommandScriptsPath": "/opt/fleetmanager-agent/commands",
+    "NodeIpAddress": "10.0.0.21"
   }
 }
 ```
 
-### 5. Build Browser Docker Image (on each VPS)
-```bash
-docker build -f scripts/Dockerfile.browser -t fleet-browser .
-```
-
----
-
 ## Service Management
+
 ```bash
 sudo systemctl status fleetmanager-agent
 sudo journalctl -u fleetmanager-agent -f
 sudo systemctl restart fleetmanager-agent
 ```
 
----
+The Linux service now launches through `/opt/fleetmanager-agent/run-agent.sh`, which supports either:
 
-## Security
-- Agent runs as `fleetmgr` system user (least privilege)
-- All commands validated against a static allowlist — no arbitrary shell execution
-- API communication uses API key (`X-Api-Key` header)
-- `forbid_shell_passthrough: true` enforced
+- a self-contained binary package named `FleetManager.Agent`
+- a framework-dependent package containing `FleetManager.Agent.dll`
 
----
+## Desktop Restart Behavior
 
-## Original Skeleton Notes
+- If the Desktop app is closed, the `fleetmanager-agent` service on each VPS keeps running normally.
+- Existing commands continue to execute because they are stored in the API, not in the Desktop process.
+- Worker-side manual takeover requests are stored as active alerts with the VNC URL, so reopening the Desktop restores those pending interactions instead of losing them.
+- Proxy rotations and worker command failures are also queued in the API worker inbox until the operator acknowledges them from the Desktop.
+- Completing a manual takeover now clears the pending alert and returns the account to `Stable`, ready for the next operator command.
 
-هذه نسخة **مترابطة ومتناسقة** من مشروع **FleetManager** لإدارة VPS nodes، تثبيت Agent آمن، heartbeat، browser/session orchestration، alerts، وmanual queue.
+## Security Notes
 
-## ما الذي أصبح مترابطًا فعليًا؟
-1. **Infrastructure** تزرع demo seed data مترابطة بين nodes والحسابات ومراحل العمل والتنبيهات.
-2. **API** تعرض nodes والحسابات والتفاصيل المرحلية من نفس المصدر.
-3. **Desktop** تجلب:
-   - `GET /api/nodes`
-   - `GET /api/accounts?nodeId=...`
-   - `GET /api/accounts/{accountId}/stage-alerts`
-4. عند اختيار VPS يتم فلترة الحسابات الخاصة بها.
-5. عند النقر على الحساب تظهر المرحلة الحالية والتنبيه النشط وتُلوَّن المرحلة المتأثرة مباشرة.
-6. عند غياب الـ API، تتراجع الواجهة تلقائيًا إلى **Demo mode** بنفس السيناريوهات حتى يبقى الـ skeleton قابلًا للعرض.
+- Do not rely on development fallback secrets in non-development environments.
+- Store `AgentApiKey`, `AdminPassword`, and `Jwt__Key` in environment variables or a secret store.
+- SSH secrets are no longer persisted as node records in the API.
+- CORS should be restricted through `Cors__AllowedOrigins`.
 
-## Included Projects
-- `FleetManager.Api` - ASP.NET Core API + SignalR hub + controllers
-- `FleetManager.Application` - use cases, interfaces, application services
-- `FleetManager.Domain` - entities, enums, shared domain rules
-- `FleetManager.Infrastructure` - EF Core DbContext + repositories + seed data
-- `FleetManager.Contracts` - shared request/response DTOs
-- `FleetManager.Agent` - .NET Worker Service للـ node agent
-- `FleetManager.Desktop` - WPF dashboard مترابطة end-to-end
-- `FleetManager.Api.Tests` - مشروع اختبارات مبدئي
+## Remaining Follow-up
 
-## Security Posture
-هذا الـ skeleton **لا** يحتوي على:
-- root/full access flows
-- arbitrary remote shell execution
-- open-all firewall defaults
-- plaintext secret storage
-
-بل يعتمد على:
-- least privilege
-- allowlisted commands
-- auditable operations
-- short-lived enrollment tokens
-
-## Desktop Defaults
-- API base URL الافتراضي: `http://localhost:5188/`
-- يمكن تغييره عبر environment variable باسم:
-  - `FLEETMANAGER_API_BASE_URL`
-
-## Open the Solution
-افتح الملف:
-- `FleetManager.sln`
-
-## Suggested Next Tasks
-1. استبدال InMemory DB بـ PostgreSQL وEF Core migrations
-2. تفعيل authentication/authorization
-3. ربط الـ Desktop عبر DI بدل الإنشاء المباشر للخدمات
-4. إضافة acknowledge/retry/open logs على مستوى التنبيه المرحلي
-5. تنفيذ manual queue screen وInstall jobs screen فعليًا
-6. بث التغييرات الفعلية عبر SignalR بدل polling/refresh
-
-## Notes
-- ملف `docs/` تم تحديثه ليعكس ربط الحسابات والتنبيهات المرحلية.
-- مشروع `Desktop` بات يعرض nodes ثم الحسابات ثم تفاصيل المرحلة في لوحة واحدة.
-- لم أتمكن من تنفيذ build داخل هذه البيئة لأن `dotnet` غير متوفر هنا.
+- Replace remaining dashboard-wide reloads with narrower account-level projections.
+- Add end-to-end coverage for provisioning and SignalR reconnect scenarios.
+- Introduce signed or checksum-verified release artifacts for agent packages.

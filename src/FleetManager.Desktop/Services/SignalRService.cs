@@ -1,5 +1,7 @@
 using System;
 using System.Threading.Tasks;
+using FleetManager.Contracts.Nodes;
+using FleetManager.Contracts.Operations;
 using Microsoft.AspNetCore.SignalR.Client;
 
 namespace FleetManager.Desktop.Services;
@@ -11,6 +13,10 @@ public sealed class SignalRService : IAsyncDisposable
     public event Action<Guid, int>? OnProxyRotated;
     public event Action<Guid, string>? OnManualRequired;
     public event Action<Guid, string>? OnBotStatusChanged;
+    public event Action<NodeSummaryResponse>? OnNodeHeartbeat;
+    public event Action<Guid, string>? OnNodeStatusChanged;
+    public event Action<WorkerInboxEventResponse>? OnWorkerInboxEvent;
+    public event Action<Guid>? OnWorkerInboxEventRemoved;
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
@@ -44,6 +50,26 @@ public sealed class SignalRService : IAsyncDisposable
         _hubConnection.On<Guid, string>("SendBotStatusChanged", (accountId, status) =>
         {
             OnBotStatusChanged?.Invoke(accountId, status);
+        });
+
+        _hubConnection.On<NodeSummaryResponse>("SendNodeHeartbeatEvent", node =>
+        {
+            OnNodeHeartbeat?.Invoke(node);
+        });
+
+        _hubConnection.On<Guid, string>("SendNodeStatusChanged", (nodeId, status) =>
+        {
+            OnNodeStatusChanged?.Invoke(nodeId, status);
+        });
+
+        _hubConnection.On<WorkerInboxEventResponse>("SendWorkerInboxEvent", workerEvent =>
+        {
+            OnWorkerInboxEvent?.Invoke(workerEvent);
+        });
+
+        _hubConnection.On<Guid>("RemoveWorkerInboxEvent", eventId =>
+        {
+            OnWorkerInboxEventRemoved?.Invoke(eventId);
         });
 
         try

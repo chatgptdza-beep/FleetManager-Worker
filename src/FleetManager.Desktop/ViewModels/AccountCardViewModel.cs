@@ -27,19 +27,27 @@ public sealed class AccountCardViewModel : ViewModelBase
     public string? ActiveAlertStage { get; init; }
     public string? ActiveAlertTitle { get; init; }
     public string? ActiveAlertMessage { get; init; }
+    public int CurrentProxyIndex { get; init; }
+    public int ProxyCount { get; init; }
+    public ObservableCollection<AccountProxyRotationViewModel> ProxyRotations { get; init; } = new();
     public ObservableCollection<AccountStageViewModel> Stages { get; init; } = new();
 
     public string DisplayName => Email;
     public string SecondaryIdentity => string.IsNullOrWhiteSpace(Username) ? "No username" : Username;
     public string AccountCode => AccountId.ToString("N")[..6].ToUpperInvariant();
     public string NodeDisplayName => $"{NodeName} ({NodeIpAddress})";
-    public string ProxyIndexLabel => "-- / --";
+    public string ProxyIndexLabel => ProxyCount <= 0
+        ? "No proxies"
+        : $"{Math.Min(CurrentProxyIndex + 1, ProxyCount)} / {ProxyCount}";
+    public string ProxySummary => ProxyCount <= 0
+        ? "No proxy pool assigned to this account."
+        : $"Current slot {Math.Min(CurrentProxyIndex + 1, ProxyCount)} out of {ProxyCount} configured proxies.";
     public bool RequiresManualAttention => Status is "Manual" or "Paused"
         || string.Equals(ActiveAlertSeverity, "ManualRequired", StringComparison.OrdinalIgnoreCase);
     public bool HasIssue => RequiresManualAttention || !string.IsNullOrWhiteSpace(ActiveAlertTitle);
 
-    public string StatusSummary => $"{NodeName} | Stage: {CurrentStage}";
-    public string DetailSummary => $"{Status} | {NodeName} | {NodeIpAddress} | Current stage: {CurrentStage}";
+    public string StatusSummary => $"{NodeName} | Stage: {CurrentStage} | Proxy: {ProxyIndexLabel}";
+    public string DetailSummary => $"{Status} | {NodeName} | {NodeIpAddress} | Current stage: {CurrentStage} | Proxy: {ProxyIndexLabel}";
     public string ActiveAlertSummary => !string.IsNullOrWhiteSpace(ActiveAlertTitle)
         ? $"{ActiveAlertStage}: {ActiveAlertTitle}"
         : "No active issue";
@@ -169,7 +177,9 @@ public sealed class AccountCardViewModel : ViewModelBase
         ActiveAlertSeverity = response.ActiveAlertSeverity,
         ActiveAlertStage = response.ActiveAlertStage,
         ActiveAlertTitle = response.ActiveAlertTitle,
-        ActiveAlertMessage = response.ActiveAlertMessage
+        ActiveAlertMessage = response.ActiveAlertMessage,
+        CurrentProxyIndex = response.CurrentProxyIndex,
+        ProxyCount = response.ProxyCount
     };
 
     public static AccountCardViewModel FromDetails(AccountStageAlertDetailsResponse response) => new()
@@ -186,6 +196,9 @@ public sealed class AccountCardViewModel : ViewModelBase
         ActiveAlertStage = response.ActiveAlertStage,
         ActiveAlertTitle = response.ActiveAlertTitle,
         ActiveAlertMessage = response.ActiveAlertMessage,
+        CurrentProxyIndex = response.CurrentProxyIndex,
+        ProxyCount = response.ProxyCount,
+        ProxyRotations = new ObservableCollection<AccountProxyRotationViewModel>(response.ProxyRotations.Select(AccountProxyRotationViewModel.FromContract)),
         Stages = new ObservableCollection<AccountStageViewModel>(response.Stages.Select(AccountStageViewModel.FromContract))
     };
 }

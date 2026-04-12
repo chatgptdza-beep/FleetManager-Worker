@@ -16,6 +16,27 @@ internal sealed class InMemoryNodeRepository : INodeRepository
     public Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default)
         => Task.FromResult(Nodes.SelectMany(node => node.Commands).FirstOrDefault(command => command.Id == commandId));
 
+    public Task<NodeCommand?> ClaimNextPendingCommandAsync(Guid nodeId, DateTime dispatchedAtUtc, DateTime redispatchCutoffUtc, CancellationToken cancellationToken = default)
+    {
+        var command = Nodes
+            .FirstOrDefault(node => node.Id == nodeId)?
+            .Commands
+            .Where(command => command.Status == FleetManager.Domain.Enums.CommandStatus.Pending
+                || (command.Status == FleetManager.Domain.Enums.CommandStatus.Dispatched
+                    && command.UpdatedAtUtc.HasValue
+                    && command.UpdatedAtUtc.Value <= redispatchCutoffUtc))
+            .OrderBy(command => command.CreatedAtUtc)
+            .FirstOrDefault();
+
+        if (command is not null)
+        {
+            command.Status = FleetManager.Domain.Enums.CommandStatus.Dispatched;
+            command.UpdatedAtUtc = dispatchedAtUtc;
+        }
+
+        return Task.FromResult(command);
+    }
+
     public Task AddAsync(VpsNode node, CancellationToken cancellationToken = default)
     {
         Nodes.Add(node);

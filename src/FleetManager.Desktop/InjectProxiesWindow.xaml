@@ -1,0 +1,94 @@
+<Window x:Class="FleetManager.Desktop.InjectProxiesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Inject Proxies"
+        Width="560"
+        SizeToContent="Height"
+        MaxHeight="720"
+        WindowStartupLocation="CenterOwner"
+        Background="#0E1A24">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Border Margin="20" Padding="24" Background="#162532" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="22">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Foreground="#F8F5F1" FontSize="26" FontWeight="Bold" Text="Inject Proxies" />
+                    <StackPanel Grid.Row="1" Margin="0,12,0,0">
+                        <TextBlock Foreground="#B9C4CD" Text="{Binding AccountLabel}" TextWrapping="Wrap" />
+                        <TextBlock Margin="0,6,0,0" Foreground="#8FA0AA" FontSize="12" Text="{Binding CurrentProxyLabel}" />
+                    </StackPanel>
+
+                    <Border Grid.Row="2" Margin="0,18,0,0" Padding="12" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                        <StackPanel>
+                            <TextBlock Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap"
+                                       Text="Load a .txt file or paste one proxy per line. Supported formats only: `ip:port` or `ip:port:user:password`. Duplicate lines are skipped." />
+                            <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                <Button Style="{StaticResource GhostButtonStyle}" Width="120" Click="LoadTxt_Click" Content="Load TXT" />
+                                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="11" Text="{Binding SelectedFileLabel}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                <RadioButton GroupName="InjectMode" IsChecked="{Binding AppendMode, Mode=TwoWay}" Checked="InjectMode_Checked" Foreground="#F8F5F1" Content="Append to current pool" />
+                                <RadioButton GroupName="InjectMode" Margin="20,0,0,0" IsChecked="{Binding ReplaceMode, Mode=TwoWay}" Checked="InjectMode_Checked" Foreground="#F8F5F1" Content="Replace current pool" />
+                            </StackPanel>
+                            <TextBlock Margin="0,10,0,0" Foreground="#B9C4CD" FontSize="11" Text="{Binding ModeSummary}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Grid.Row="3" Margin="0,18,0,0">
+                        <DockPanel Margin="0,0,0,8">
+                            <TextBlock Foreground="#B9C4CD" FontSize="13" Text="Proxy List" />
+                            <TextBlock DockPanel.Dock="Right" Foreground="#8FA0AA" FontSize="11" Text="{Binding PreviewSummary}" />
+                        </DockPanel>
+                        <TextBox x:Name="RawProxiesTextBox"
+                                 MinHeight="220"
+                                 MaxHeight="360"
+                                 AcceptsReturn="True"
+                                 AcceptsTab="True"
+                                 AllowDrop="True"
+                                 TextChanged="RawProxiesTextBox_TextChanged"
+                                 PreviewDragOver="RawProxiesTextBox_PreviewDragOver"
+                                 Drop="RawProxiesTextBox_Drop"
+                                 TextWrapping="NoWrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas"
+                                 Padding="12" />
+                        <Border Margin="0,12,0,0" Padding="12" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Foreground="#8FA0AA" FontSize="11" Text="VALID" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="#47C1A8" FontSize="18" FontWeight="Bold" Text="{Binding ValidLineCount}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Foreground="#8FA0AA" FontSize="11" Text="INVALID" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="#FFB1B1" FontSize="18" FontWeight="Bold" Text="{Binding InvalidLineCount}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Foreground="#8FA0AA" FontSize="11" Text="DUPLICATES" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="#FFD38A" FontSize="18" FontWeight="Bold" Text="{Binding DuplicateLineCount}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Row="4" Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource GhostButtonStyle}" Width="120" Margin="0,0,12,0" Click="Cancel_Click" Content="Cancel" />
+                        <Button Style="{StaticResource PrimaryButtonStyle}" Width="140" Click="Inject_Click" Content="Inject Proxies" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Window>

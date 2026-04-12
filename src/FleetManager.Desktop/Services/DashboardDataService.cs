@@ -4,25 +4,33 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FleetManager.Contracts.Accounts;
 using FleetManager.Contracts.Nodes;
+using FleetManager.Contracts.Operations;
 
 namespace FleetManager.Desktop.Services;
 
 public sealed class DashboardDataService : IDashboardDataService
 {
     private readonly HttpClient _httpClient;
-    private readonly OfflineDashboardDataService _fallback = new();
-    private string? _bearerToken;
+    private readonly OfflineDashboardDataService _demoDataService = new();
+    private readonly bool _demoModeEnabled;
     private readonly SemaphoreSlim _authLock = new(1, 1);
+    private string? _bearerToken;
 
     public DashboardDataService()
     {
-        CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://82.223.9.98:5000/");
+        _demoModeEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("FLEETMANAGER_DESKTOP_DEMO_MODE"),
+            "true",
+            StringComparison.OrdinalIgnoreCase);
+        CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://localhost:5188/");
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute),
             Timeout = TimeSpan.FromSeconds(10)
         };
-        CurrentModeLabel = "API mode";
+
+        _demoDataService.ConfigureBaseUrl(CurrentBaseUrl);
+        CurrentModeLabel = _demoModeEnabled ? _demoDataService.CurrentModeLabel : "API mode";
     }
 
     public string CurrentModeLabel { get; private set; }
@@ -33,216 +41,408 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         CurrentBaseUrl = NormalizeBaseUrl(baseUrl);
         _httpClient.BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute);
-        _bearerToken = null; // reset token when URL changes
-        _fallback.ConfigureBaseUrl(CurrentBaseUrl);
+        _httpClient.DefaultRequestHeaders.Authorization = null;
+        _bearerToken = null;
+        _demoDataService.ConfigureBaseUrl(CurrentBaseUrl);
+        CurrentModeLabel = _demoModeEnabled ? _demoDataService.CurrentModeLabel : "API mode";
+    }
+
+    public async Task<IReadOnlyList<NodeSummaryResponse>> GetNodesAsync(CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetNodesAsync(cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var response = await _httpClient.GetFromJsonAsync<List<NodeSummaryResponse>>("api/nodes", cancellationToken)
+            ?? new List<NodeSummaryResponse>();
+        CurrentModeLabel = "API mode";
+        return response;
+    }
+
+    public async Task<NodeSummaryResponse?> GetNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetNodeAsync(nodeId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync($"api/nodes/{nodeId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<NodeSummaryResponse>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<NodeSummaryResponse> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.CreateNodeAsync(request, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("api/nodes", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<NodeSummaryResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Node creation returned no payload.");
+    }
+
+    public async Task<IReadOnlyList<AccountSummaryResponse>> GetAccountsAsync(Guid? nodeId = null, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetAccountsAsync(nodeId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var relativeUrl = nodeId.HasValue
+            ? $"api/accounts?nodeId={nodeId.Value}"
+            : "api/accounts";
+        var response = await _httpClient.GetFromJsonAsync<List<AccountSummaryResponse>>(relativeUrl, cancellationToken)
+            ?? new List<AccountSummaryResponse>();
+        CurrentModeLabel = "API mode";
+        return response;
+    }
+
+    public async Task<AccountSummaryResponse?> GetAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetAccountAsync(accountId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync($"api/accounts/{accountId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<AccountStageAlertDetailsResponse?> GetAccountStageAlertsAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetAccountStageAlertsAsync(accountId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync($"api/accounts/{accountId}/stage-alerts", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<AccountStageAlertDetailsResponse>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<AccountSummaryResponse?> CompleteManualTakeoverAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.CompleteManualTakeoverAsync(accountId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsync($"api/accounts/{accountId}/manual-complete", content: null, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<InjectProxiesResponse> InjectProxiesAsync(Guid accountId, string rawProxies, bool replaceExisting = false, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.InjectProxiesAsync(accountId, rawProxies, replaceExisting, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"api/accounts/{accountId}/proxies/inject",
+            new
+            {
+                RawProxies = rawProxies,
+                ReplaceExisting = replaceExisting
+            },
+            cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new InvalidOperationException("Account not found.");
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<InjectProxiesResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Proxy injection returned no payload.");
+    }
+
+    public async Task<RotateProxyResponse> RotateProxyAsync(Guid accountId, string? reason = null, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.RotateProxyAsync(accountId, reason, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync(
+            $"api/accounts/{accountId}/proxies/rotate",
+            new { Reason = reason ?? "Manual rotation from Desktop" },
+            cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            throw new InvalidOperationException("Account not found.");
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<RotateProxyResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Proxy rotation returned no payload.");
+    }
+
+    public async Task<IReadOnlyList<WorkerInboxEventResponse>> GetWorkerInboxEventsAsync(bool pendingOnly = true, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetWorkerInboxEventsAsync(pendingOnly, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var relativeUrl = pendingOnly ? "api/worker-events?pendingOnly=true" : "api/worker-events?pendingOnly=false";
+        var response = await _httpClient.GetFromJsonAsync<List<WorkerInboxEventResponse>>(relativeUrl, cancellationToken)
+            ?? new List<WorkerInboxEventResponse>();
+        CurrentModeLabel = "API mode";
+        return response;
+    }
+
+    public async Task<bool> AcknowledgeWorkerInboxEventAsync(Guid eventId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.AcknowledgeWorkerInboxEventAsync(eventId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsync($"api/worker-events/{eventId}/acknowledge", content: null, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return true;
+    }
+
+    public async Task<AccountSummaryResponse> CreateAccountAsync(CreateAccountRequest request, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.CreateAccountAsync(request, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync("api/accounts", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("Account creation returned no payload.");
+    }
+
+    public async Task<AccountSummaryResponse?> UpdateAccountAsync(Guid accountId, UpdateAccountRequest request, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.UpdateAccountAsync(accountId, request, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PutAsJsonAsync($"api/accounts/{accountId}", request, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.DeleteAccountAsync(accountId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.DeleteAsync($"api/accounts/{accountId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return true;
+    }
+
+    public async Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.DeleteNodeAsync(nodeId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.DeleteAsync($"api/nodes/{nodeId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return true;
+    }
+
+    public async Task<Guid?> DispatchNodeCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.DispatchNodeCommandAsync(nodeId, request, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.PostAsJsonAsync($"api/nodes/{nodeId}/commands", request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        var payload = await response.Content.ReadFromJsonAsync<DispatchResponse>(cancellationToken: cancellationToken);
+        return payload?.CommandId;
+    }
+
+    public async Task<NodeCommandStatusResponse?> GetNodeCommandStatusAsync(Guid nodeId, Guid commandId, CancellationToken cancellationToken = default)
+    {
+        if (_demoModeEnabled)
+        {
+            CurrentModeLabel = _demoDataService.CurrentModeLabel;
+            return await _demoDataService.GetNodeCommandStatusAsync(nodeId, commandId, cancellationToken);
+        }
+
+        await EnsureAuthenticatedAsync(cancellationToken);
+        using var response = await _httpClient.GetAsync($"api/nodes/{nodeId}/commands/{commandId}", cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            CurrentModeLabel = "API mode";
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        CurrentModeLabel = "API mode";
+        return await response.Content.ReadFromJsonAsync<NodeCommandStatusResponse>(cancellationToken: cancellationToken);
     }
 
     private async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken)
     {
-        if (_bearerToken != null) return;
+        if (_demoModeEnabled || !string.IsNullOrWhiteSpace(_bearerToken))
+        {
+            return;
+        }
+
         await _authLock.WaitAsync(cancellationToken);
         try
         {
-            if (_bearerToken != null) return;
-            var password = Environment.GetEnvironmentVariable("FLEETMANAGER_API_PASSWORD") ?? "Admin@FleetMgr2026!";
-            var response = await _httpClient.PostAsJsonAsync(
-                "api/auth/token",
-                new { Password = password },
-                cancellationToken);
-            if (response.IsSuccessStatusCode)
+            if (!string.IsNullOrWhiteSpace(_bearerToken))
             {
-                var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
-                _bearerToken = result.GetProperty("token").GetString();
-                _httpClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", _bearerToken);
+                return;
             }
+
+            using var response = await _httpClient.PostAsJsonAsync(
+                "api/auth/token",
+                new { Password = ResolveOperatorPassword() },
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+
+            var result = await response.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: cancellationToken);
+            if (!result.TryGetProperty("token", out var tokenElement))
+            {
+                throw new InvalidOperationException("Authentication response did not include a token.");
+            }
+
+            _bearerToken = tokenElement.GetString();
+            if (string.IsNullOrWhiteSpace(_bearerToken))
+            {
+                throw new InvalidOperationException("Authentication response returned an empty token.");
+            }
+
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _bearerToken);
         }
-        catch { /* silently fail — API calls will 401 and fall back to offline mode */ }
         finally
         {
             _authLock.Release();
         }
     }
 
-    public async Task<IReadOnlyList<NodeSummaryResponse>> GetNodesAsync(CancellationToken cancellationToken = default)
+    private string ResolveOperatorPassword()
     {
-        try
+        var configuredPassword = Environment.GetEnvironmentVariable("FLEETMANAGER_API_PASSWORD");
+        if (!string.IsNullOrWhiteSpace(configuredPassword))
         {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.GetFromJsonAsync<List<NodeSummaryResponse>>("api/nodes", cancellationToken);
-            CurrentModeLabel = "API mode";
-            return response ?? new List<NodeSummaryResponse>();
+            return configuredPassword.Trim();
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.GetNodesAsync(cancellationToken);
-        }
-    }
 
-    public async Task<NodeSummaryResponse> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
-    {
-        try
+        if (Uri.TryCreate(CurrentBaseUrl, UriKind.Absolute, out var baseUri)
+            && (string.Equals(baseUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(baseUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)))
         {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.PostAsJsonAsync("api/nodes", request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            CurrentModeLabel = "API mode";
-            return await response.Content.ReadFromJsonAsync<NodeSummaryResponse>(cancellationToken: cancellationToken)
-                ?? throw new InvalidOperationException("Node creation returned no payload.");
+            return "Admin@FleetMgr2026!";
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.CreateNodeAsync(request, cancellationToken);
-        }
-    }
 
-    public async Task<IReadOnlyList<AccountSummaryResponse>> GetAccountsAsync(Guid? nodeId = null, CancellationToken cancellationToken = default)
-    {
-        var path = nodeId.HasValue ? $"api/accounts?nodeId={nodeId.Value}" : "api/accounts";
-
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.GetFromJsonAsync<List<AccountSummaryResponse>>(path, cancellationToken);
-            CurrentModeLabel = "API mode";
-            return response ?? new List<AccountSummaryResponse>();
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.GetAccountsAsync(nodeId, cancellationToken);
-        }
-    }
-
-    public async Task<AccountStageAlertDetailsResponse?> GetAccountStageAlertsAsync(Guid accountId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            CurrentModeLabel = "API mode";
-            return await _httpClient.GetFromJsonAsync<AccountStageAlertDetailsResponse>($"api/accounts/{accountId}/stage-alerts", cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.GetAccountStageAlertsAsync(accountId, cancellationToken);
-        }
-    }
-
-    public async Task<AccountSummaryResponse> CreateAccountAsync(CreateAccountRequest request, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.PostAsJsonAsync("api/accounts", request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            CurrentModeLabel = "API mode";
-            return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken)
-                ?? throw new InvalidOperationException("Account creation returned no payload.");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.CreateAccountAsync(request, cancellationToken);
-        }
-    }
-
-    public async Task<AccountSummaryResponse?> UpdateAccountAsync(Guid accountId, UpdateAccountRequest request, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.PutAsJsonAsync($"api/accounts/{accountId}", request, cancellationToken);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                CurrentModeLabel = "API mode";
-                return null;
-            }
-
-            response.EnsureSuccessStatusCode();
-            CurrentModeLabel = "API mode";
-            return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.UpdateAccountAsync(accountId, request, cancellationToken);
-        }
-    }
-
-    public async Task<bool> DeleteAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            using var response = await _httpClient.DeleteAsync($"api/accounts/{accountId}", cancellationToken);
-            CurrentModeLabel = "API mode";
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.DeleteAccountAsync(accountId, cancellationToken);
-        }
-    }
-
-    public async Task<bool> DeleteNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            using var response = await _httpClient.DeleteAsync($"api/nodes/{nodeId}", cancellationToken);
-            CurrentModeLabel = "API mode";
-            return response.IsSuccessStatusCode;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.DeleteNodeAsync(nodeId, cancellationToken);
-        }
-    }
-
-    public async Task<Guid?> DispatchNodeCommandAsync(Guid nodeId, DispatchNodeCommandRequest request, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            var response = await _httpClient.PostAsJsonAsync($"api/nodes/{nodeId}/commands", request, cancellationToken);
-            response.EnsureSuccessStatusCode();
-            CurrentModeLabel = "API mode";
-            var payload = await response.Content.ReadFromJsonAsync<DispatchResponse>(cancellationToken: cancellationToken);
-            return payload?.CommandId;
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.DispatchNodeCommandAsync(nodeId, request, cancellationToken);
-        }
-    }
-
-    public async Task<NodeCommandStatusResponse?> GetNodeCommandStatusAsync(Guid nodeId, Guid commandId, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await EnsureAuthenticatedAsync(cancellationToken);
-            using var response = await _httpClient.GetAsync($"api/nodes/{nodeId}/commands/{commandId}", cancellationToken);
-            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
-            {
-                CurrentModeLabel = "API mode";
-                return null;
-            }
-
-            response.EnsureSuccessStatusCode();
-            CurrentModeLabel = "API mode";
-            return await response.Content.ReadFromJsonAsync<NodeCommandStatusResponse>(cancellationToken: cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException)
-        {
-            CurrentModeLabel = _fallback.CurrentModeLabel;
-            return await _fallback.GetNodeCommandStatusAsync(nodeId, commandId, cancellationToken);
-        }
+        throw new InvalidOperationException(
+            "Missing FLEETMANAGER_API_PASSWORD for the configured API endpoint. Set it or enable FLEETMANAGER_DESKTOP_DEMO_MODE=true.");
     }
 
     private static string NormalizeBaseUrl(string baseUrl)

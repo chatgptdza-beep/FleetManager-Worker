@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using FleetManager.Contracts.Accounts;
 using FleetManager.Contracts.Nodes;
+using FleetManager.Contracts.Operations;
 using FleetManager.Desktop.Models;
 using FleetManager.Desktop.Services;
 
@@ -37,11 +38,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _statusMessage = "Loading dashboard...";
     private string _focusedViewerUrl = string.Empty;
     private string _focusedViewerMessage = "Request a viewer session to see the viewer URL here.";
+    private bool _showWorkerInboxHistory;
+    private int _pendingWorkerEventCount;
     private bool _isInitializing;
 
     public ObservableCollection<NodeCardViewModel> Nodes { get; } = new();
     public ObservableCollection<AccountCardViewModel> Accounts { get; } = new();
     public ObservableCollection<AccountCardViewModel> ManualQueueAccounts { get; } = new();
+    public ObservableCollection<WorkerInboxEventViewModel> WorkerInboxEvents { get; } = new();
 
     public MainView CurrentView
     {
@@ -61,6 +65,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public Visibility ManualQueueViewVisibility => CurrentView == MainView.ManualQueue ? Visibility.Visible : Visibility.Collapsed;
     public Visibility SettingsViewVisibility => CurrentView == MainView.Settings ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ManualQueueEmptyVisibility => ManualQueueAccounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility WorkerInboxEmptyVisibility => WorkerInboxEvents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public bool IsDashboardActive => CurrentView == MainView.Dashboard;
     public bool IsAccountsActive => CurrentView == MainView.Accounts;
@@ -123,6 +128,11 @@ public sealed class MainWindowViewModel : ViewModelBase
                 OnPropertyChanged(nameof(FocusedAccountDetailVisibility));
                 OnPropertyChanged(nameof(FocusedAccountAlertVisibility));
                 OnPropertyChanged(nameof(FocusedAccountStages));
+                OnPropertyChanged(nameof(FocusedProxySummary));
+                OnPropertyChanged(nameof(FocusedProxyRotationSummary));
+                OnPropertyChanged(nameof(FocusedProxyRotations));
+                OnPropertyChanged(nameof(FocusedProxyHistoryVisibility));
+                OnPropertyChanged(nameof(FocusedProxyHistoryEmptyVisibility));
                 RefreshFocusedViewerState();
             }
         }
@@ -162,6 +172,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public string ProfilesLoadedLabel => TotalAccountCount.ToString("00");
     public string ManualQueueLabel => ManualRequiredCount.ToString("00");
+    public int PendingWorkerEventCount => _pendingWorkerEventCount;
+    public string WorkerInboxLabel => PendingWorkerEventCount.ToString("00");
+    public string WorkerInboxModeSummary => _showWorkerInboxHistory
+        ? $"Showing pending and acknowledged events ({WorkerInboxEvents.Count})"
+        : $"Showing pending events only ({WorkerInboxEvents.Count})";
+    public string WorkerInboxEmptyMessage => _showWorkerInboxHistory
+        ? "No worker events have been recorded yet."
+        : "No pending worker events are waiting for the desktop.";
     public string AccountsGroupLabel => $"{NodeCount} groups";
     public string SourceBanner => $"Source: {_dataService.CurrentModeLabel} | API: {_dataService.CurrentBaseUrl}";
     public string AccountsPanelTitle => "Accounts By VPS";
@@ -195,6 +213,17 @@ public sealed class MainWindowViewModel : ViewModelBase
     public Visibility FocusedAccountPlaceholderVisibility => FocusedAccount is null ? Visibility.Visible : Visibility.Collapsed;
     public Visibility FocusedAccountDetailVisibility => FocusedAccount is null ? Visibility.Collapsed : Visibility.Visible;
     public Visibility FocusedAccountAlertVisibility => FocusedAccount is { HasIssue: true } ? Visibility.Visible : Visibility.Collapsed;
+    public string FocusedProxySummary => FocusedAccount?.ProxySummary ?? "Select an account to inspect its proxy pool.";
+    public string FocusedProxyRotationSummary => FocusedAccount is null
+        ? "No account selected."
+        : FocusedAccount.ProxyRotations.Count == 0
+            ? $"Proxy pool size: {FocusedAccount.ProxyCount}"
+            : $"Recent proxy rotations: {FocusedAccount.ProxyRotations.Count}";
+    public IReadOnlyList<AccountProxyRotationViewModel> FocusedProxyRotations => FocusedAccount is null
+        ? Array.Empty<AccountProxyRotationViewModel>()
+        : FocusedAccount.ProxyRotations.ToList();
+    public Visibility FocusedProxyHistoryVisibility => FocusedAccount is { ProxyRotations.Count: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility FocusedProxyHistoryEmptyVisibility => FocusedAccount is null || FocusedAccount.ProxyRotations.Count > 0 ? Visibility.Collapsed : Visibility.Visible;
     public IReadOnlyList<AccountStageViewModel> FocusedAccountStages => FocusedAccount is null
         ? Array.Empty<AccountStageViewModel>()
         : FocusedAccount.Stages.ToList();
@@ -211,14 +240,17 @@ public sealed class MainWindowViewModel : ViewModelBase
             ? "Select one account or check multiple rows to use the action bar."
             : $"Single target: {SelectedAccount.Email}";
 
+    private readonly ISshProvisioningService _sshProvisioningService;
+
     public MainWindowViewModel()
-        : this(new DashboardDataService())
+        : this(new DashboardDataService(), new SshProvisioningService())
     {
     }
 
-    public MainWindowViewModel(IDashboardDataService dataService)
+    public MainWindowViewModel(IDashboardDataService dataService, ISshProvisioningService sshProvisioningService)
     {
         _dataService = dataService;
+        _sshProvisioningService = sshProvisioningService;
     }
 
     /// <summary>Exposes the data service for use in code-behind (e.g. RemoteTakeoverWindow).</summary>
@@ -237,6 +269,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         {
             await LoadNodesAsync();
             await LoadAllAccountsAsync();
+            await LoadWorkerInboxEventsAsync();
 
             SelectedNode = ResolveSelectedNode(preferredNodeId);
             await LoadAccountsForSelectedNodeAsync(preferredAccountId);
@@ -260,9 +293,13 @@ public sealed class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            _signalR.OnBotStatusChanged += OnSignalRBotStatusChanged;
-            _signalR.OnManualRequired += OnSignalRManualRequired;
-            _signalR.OnProxyRotated += OnSignalRProxyRotated;
+            _signalR.OnBotStatusChanged += HandleSignalRBotStatusChanged;
+            _signalR.OnManualRequired += HandleSignalRManualRequired;
+            _signalR.OnProxyRotated += HandleSignalRProxyRotated;
+            _signalR.OnNodeHeartbeat += HandleSignalRNodeHeartbeat;
+            _signalR.OnNodeStatusChanged += HandleSignalRNodeStatusChanged;
+            _signalR.OnWorkerInboxEvent += HandleWorkerInboxEvent;
+            _signalR.OnWorkerInboxEventRemoved += HandleWorkerInboxEventRemoved;
 
             await _signalR.ConnectAsync(_dataService.CurrentBaseUrl, token);
             SignalRStatusLabel = _signalR.IsConnected ? "Connected" : "Connection failed";
@@ -277,41 +314,137 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            _signalR.OnBotStatusChanged -= OnSignalRBotStatusChanged;
-            _signalR.OnManualRequired -= OnSignalRManualRequired;
-            _signalR.OnProxyRotated -= OnSignalRProxyRotated;
+            _signalR.OnBotStatusChanged -= HandleSignalRBotStatusChanged;
+            _signalR.OnManualRequired -= HandleSignalRManualRequired;
+            _signalR.OnProxyRotated -= HandleSignalRProxyRotated;
+            _signalR.OnNodeHeartbeat -= HandleSignalRNodeHeartbeat;
+            _signalR.OnNodeStatusChanged -= HandleSignalRNodeStatusChanged;
+            _signalR.OnWorkerInboxEvent -= HandleWorkerInboxEvent;
+            _signalR.OnWorkerInboxEventRemoved -= HandleWorkerInboxEventRemoved;
             await _signalR.DisconnectAsync();
             SignalRStatusLabel = "Disconnected";
         }
         catch { /* cleanup best-effort */ }
     }
 
-    private void OnSignalRBotStatusChanged(Guid accountId, string status)
+    private void HandleSignalRBotStatusChanged(Guid accountId, string status)
     {
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
-            await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"⚡ Live: {status}";
+            await RefreshAccountDataAsync(accountId);
+            StatusMessage = $"Live: {status}";
         });
     }
 
-    private void OnSignalRManualRequired(Guid accountId, string vncUrl)
+    private void HandleSignalRManualRequired(Guid accountId, string vncUrl)
     {
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
             _viewerSessions[accountId] = new ViewerSessionInfo(vncUrl, $"Manual takeover ready: {vncUrl}");
-            await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"⚡ Live: Manual required for account";
+            await RefreshAccountDataAsync(accountId);
+            StatusMessage = "Live: Manual required for account";
         });
     }
 
-    private void OnSignalRProxyRotated(Guid accountId, int newIndex)
+    private void HandleSignalRProxyRotated(Guid accountId, int newIndex)
     {
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
-            await ReloadAsync(SelectedNode?.NodeId, accountId);
-            StatusMessage = $"⚡ Live: Proxy rotated (index {newIndex})";
+            await RefreshAccountDataAsync(accountId);
+            StatusMessage = $"Live: Proxy rotated (index {newIndex})";
         });
+    }
+
+    private void HandleSignalRNodeHeartbeat(NodeSummaryResponse node)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(() =>
+        {
+            ApplyNodeSummary(node);
+            StatusMessage = $"Live: node heartbeat {node.Name}";
+        });
+    }
+
+    private void HandleSignalRNodeStatusChanged(Guid nodeId, string status)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(() =>
+        {
+            ApplyNodeUpdate(nodeId, node => CloneNode(node, status: status));
+            StatusMessage = $"Live: node status {status}";
+        });
+    }
+
+    private void HandleWorkerInboxEvent(WorkerInboxEventResponse workerEvent)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(() =>
+        {
+            UpsertWorkerInboxEvent(workerEvent);
+            StatusMessage = $"Live: {workerEvent.Title}";
+        });
+    }
+
+    private void HandleWorkerInboxEventRemoved(Guid eventId)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(async () =>
+        {
+            if (_showWorkerInboxHistory)
+            {
+                await LoadWorkerInboxEventsAsync(pendingOnly: false);
+            }
+            else
+            {
+                RemoveWorkerInboxEvent(eventId);
+            }
+
+            StatusMessage = "Live: worker event acknowledged";
+        });
+    }
+
+    private async Task RefreshAccountDataAsync(Guid? preferredAccountId = null)
+    {
+        if (!preferredAccountId.HasValue)
+        {
+            await ReloadAsync(SelectedNode?.NodeId);
+            return;
+        }
+
+        var account = await _dataService.GetAccountAsync(preferredAccountId.Value);
+        if (account is null)
+        {
+            RemoveAccountFromCache(preferredAccountId.Value);
+            StatusMessage = SourceBanner;
+            return;
+        }
+
+        UpsertAccountInCache(account, preferredAccountId);
+        await RefreshNodeSummaryAsync(account.NodeId);
+
+        if (SelectedAccount?.AccountId == account.Id || FocusedAccount?.AccountId == account.Id)
+        {
+            await LoadSelectedAccountDetailsAsync(account.Id);
+        }
+        else
+        {
+            StatusMessage = SourceBanner;
+        }
+    }
+
+    private async Task LoadWorkerInboxEventsAsync(bool? pendingOnly = null)
+    {
+        var displayPendingOnly = pendingOnly ?? !_showWorkerInboxHistory;
+        _showWorkerInboxHistory = !displayPendingOnly;
+
+        var workerEvents = await _dataService.GetWorkerInboxEventsAsync(displayPendingOnly);
+        WorkerInboxEvents.Clear();
+        foreach (var workerEvent in workerEvents
+                     .OrderByDescending(workerEvent => workerEvent.CreatedAtUtc)
+                     .Select(WorkerInboxEventViewModel.FromContract))
+        {
+            WorkerInboxEvents.Add(workerEvent);
+            TryRestoreViewerSessionFromWorkerEvent(workerEvent);
+        }
+
+        UpdatePendingWorkerEventCount();
+        NotifyDashboardPropertiesChanged();
     }
 
     public async Task DeleteNodeAsync(Guid nodeId)
@@ -328,6 +461,32 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public async Task AcknowledgeWorkerInboxEventAsync(WorkerInboxEventViewModel workerEvent)
+    {
+        var acknowledged = await _dataService.AcknowledgeWorkerInboxEventAsync(workerEvent.EventId);
+        if (!acknowledged)
+        {
+            throw new InvalidOperationException("Worker event no longer exists.");
+        }
+
+        if (_showWorkerInboxHistory)
+        {
+            await LoadWorkerInboxEventsAsync(pendingOnly: false);
+        }
+        else
+        {
+            RemoveWorkerInboxEvent(workerEvent.EventId);
+        }
+
+        StatusMessage = $"Acknowledged worker event: {workerEvent.Title}";
+    }
+
+    public Task ShowPendingWorkerInboxAsync()
+        => LoadWorkerInboxEventsAsync(pendingOnly: true);
+
+    public Task ShowWorkerInboxHistoryAsync()
+        => LoadWorkerInboxEventsAsync(pendingOnly: false);
+
     public async Task CreateAccountAsync(CreateAccountRequest request)
     {
         var created = await _dataService.CreateAccountAsync(request);
@@ -337,9 +496,37 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task CreateNodeAsync(CreateNodeRequest request)
     {
-        var created = await _dataService.CreateNodeAsync(request);
-        await ReloadAsync(created.Id);
-        StatusMessage = $"Added {created.Name} | NodeId: {created.Id} | {SourceBanner}";
+        try
+        {
+            StatusMessage = "Testing SSH Connection...";
+            if (!await _sshProvisioningService.TestConnectionAsync(request))
+            {
+                throw new InvalidOperationException("SSH Connection Failed. Verify credentials.");
+            }
+
+            StatusMessage = "Checking if Agent is already running...";
+            bool agentRunning = await _sshProvisioningService.IsAgentRunningAsync(request);
+
+            if (!agentRunning)
+            {
+                StatusMessage = "Installing FleetManager Agent. This may take a few minutes...";
+                await _sshProvisioningService.InstallAgentAsync(request, _dataService.CurrentBaseUrl);
+            }
+
+            StatusMessage = "Registering node with API...";
+            var created = await _dataService.CreateNodeAsync(request);
+
+            StatusMessage = "Configuring agent appsettings and restarting worker...";
+            await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, _dataService.CurrentBaseUrl);
+
+            await ReloadAsync(created.Id);
+            StatusMessage = $"Added {created.Name} | NodeId: {created.Id} | Auto-Installer {(agentRunning ? "Skipped" : "Success")} | {SourceBanner}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Auto-Installer failed: {ex.Message}";
+            throw; // Re-throw so MainWindow.xaml.cs can show it in MessageBox if needed
+        }
     }
 
     public async Task UpdateAccountAsync(Guid accountId, UpdateAccountRequest request)
@@ -354,16 +541,43 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Updated {updated.Email} | {SourceBanner}";
     }
 
-    public async Task DeleteAccountAsync(Guid accountId)
+    public async Task InjectProxiesAsync(AccountCardViewModel account, string rawProxies, bool replaceExisting = false)
     {
-        var deleted = await _dataService.DeleteAccountAsync(accountId);
+        var result = await _dataService.InjectProxiesAsync(account.AccountId, rawProxies, replaceExisting);
+        await RefreshAccountDataAsync(account.AccountId);
+
+        StatusMessage = replaceExisting
+            ? $"Replaced {result.ClearedCount} proxies and injected {result.InjectedCount} into {account.Email} | Total proxies: {result.TotalProxies} | {SourceBanner}"
+            : $"Injected {result.InjectedCount} proxies into {account.Email} | Total proxies: {result.TotalProxies} | {SourceBanner}";
+    }
+
+    public async Task RotateProxyNowAsync(AccountCardViewModel account)
+    {
+        var result = await _dataService.RotateProxyAsync(account.AccountId, "Manual rotation from Desktop");
+        await RefreshAccountDataAsync(account.AccountId);
+        StatusMessage = $"Rotated proxy for {account.Email} to slot {result.NewIndex + 1} | {SourceBanner}";
+    }
+
+    public async Task DeleteAccountAsync(AccountCardViewModel account)
+    {
+        // Try to wipe the profile and stop browser on the VPS if it's assigned
+        if (account.NodeId != Guid.Empty)
+        {
+            try
+            {
+                await DispatchAccountCommandAsync(account, "StopBrowser");
+            }
+            catch { /* Best effort, ignore if offline */ }
+        }
+
+        var deleted = await _dataService.DeleteAccountAsync(account.AccountId);
         if (!deleted)
         {
             throw new InvalidOperationException("Account not found.");
         }
 
         await ReloadAsync(SelectedNode?.NodeId);
-        StatusMessage = $"Deleted account {accountId} | {SourceBanner}";
+        StatusMessage = $"Deleted account {account.AccountId} | {SourceBanner}";
     }
 
     public Task ExecutePrimaryActionAsync(AccountCardViewModel account)
@@ -379,6 +593,14 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task OpenRemoteViewerAsync(AccountCardViewModel account)
     {
+        if (_viewerSessions.TryGetValue(account.AccountId, out var existingViewer)
+            && !string.IsNullOrWhiteSpace(existingViewer.Url))
+        {
+            await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
+            StatusMessage = $"Recovered pending viewer for {account.Email}: {existingViewer.Url} | {SourceBanner}";
+            return;
+        }
+
         var commandId = await _dataService.DispatchNodeCommandAsync(account.NodeId, new DispatchNodeCommandRequest
         {
             CommandType = "OpenAssignedSession",
@@ -436,6 +658,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         foreach (var account in targets)
         {
+            if (account.NodeId != Guid.Empty)
+            {
+                try
+                {
+                    await DispatchAccountCommandAsync(account, "StopBrowser");
+                }
+                catch { /* Best effort */ }
+            }
+
             var deleted = await _dataService.DeleteAccountAsync(account.AccountId);
             if (!deleted)
             {
@@ -675,27 +906,26 @@ public sealed class MainWindowViewModel : ViewModelBase
         var accounts = await _dataService.GetAccountsAsync();
         _allAccounts.Clear();
         _allAccounts.AddRange(accounts.Select(AccountCardViewModel.FromSummary).OrderBy(account => account.Email));
+        RestorePendingWorkerSessions(_allAccounts);
         RefreshManualQueue();
         NotifyDashboardPropertiesChanged();
     }
 
     private async Task LoadAccountsForSelectedNodeAsync(Guid? preferredAccountId = null)
     {
-        _selectedNodeAccounts.Clear();
-
-        if (SelectedNode is not null)
-        {
-            var accounts = await _dataService.GetAccountsAsync(SelectedNode.NodeId);
-            _selectedNodeAccounts.AddRange(accounts.Select(AccountCardViewModel.FromSummary).OrderBy(account => account.Email));
-        }
-
-        ApplyVisibleAccountsFilter(preferredAccountId);
+        RebuildSelectedNodeAccounts(preferredAccountId);
         StatusMessage = SourceBanner;
+        await Task.CompletedTask;
     }
 
     private async Task LoadSelectedAccountDetailsAsync(Guid accountId)
     {
         var details = await _dataService.GetAccountStageAlertsAsync(accountId);
+        if (!string.IsNullOrWhiteSpace(details?.ActiveAlertMessage))
+        {
+            TryRestoreViewerSession(accountId, details.ActiveAlertMessage, details.Email);
+        }
+
         FocusedAccount = details is null ? SelectedAccount : AccountCardViewModel.FromDetails(details);
         StatusMessage = SourceBanner;
     }
@@ -736,6 +966,122 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private async Task RefreshNodeSummaryAsync(Guid nodeId)
+    {
+        var node = await _dataService.GetNodeAsync(nodeId);
+        if (node is not null)
+        {
+            ApplyNodeSummary(node);
+        }
+    }
+
+    private void UpsertAccountInCache(AccountSummaryResponse summary, Guid? preferredAccountId = null)
+    {
+        var replacement = AccountCardViewModel.FromSummary(summary);
+        if (string.Equals(summary.Status, "Manual", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(summary.Status, "Paused", StringComparison.OrdinalIgnoreCase))
+        {
+            TryRestoreViewerSession(summary.Id, summary.ActiveAlertMessage, summary.Email);
+        }
+
+        var existingIndex = _allAccounts.FindIndex(account => account.AccountId == summary.Id);
+        if (existingIndex >= 0)
+        {
+            replacement.IsChecked = _allAccounts[existingIndex].IsChecked;
+            _allAccounts[existingIndex] = replacement;
+        }
+        else
+        {
+            _allAccounts.Add(replacement);
+        }
+
+        _allAccounts.Sort(static (left, right) => string.Compare(left.Email, right.Email, StringComparison.OrdinalIgnoreCase));
+        RefreshManualQueue();
+        RebuildSelectedNodeAccounts(SelectedNode?.NodeId == summary.NodeId ? preferredAccountId : null);
+        NotifyDashboardPropertiesChanged();
+    }
+
+    private void RemoveAccountFromCache(Guid accountId)
+    {
+        _allAccounts.RemoveAll(account => account.AccountId == accountId);
+        _viewerSessions.Remove(accountId);
+        RefreshManualQueue();
+        RebuildSelectedNodeAccounts();
+        NotifyDashboardPropertiesChanged();
+    }
+
+    private void UpsertWorkerInboxEvent(WorkerInboxEventResponse response)
+    {
+        var replacement = WorkerInboxEventViewModel.FromContract(response);
+        var existingIndex = WorkerInboxEvents
+            .Select((workerEvent, index) => new { workerEvent, index })
+            .FirstOrDefault(entry => entry.workerEvent.EventId == response.Id)?
+            .index ?? -1;
+
+        if (existingIndex >= 0)
+        {
+            WorkerInboxEvents[existingIndex] = replacement;
+        }
+        else
+        {
+            WorkerInboxEvents.Insert(0, replacement);
+        }
+
+        TryRestoreViewerSessionFromWorkerEvent(replacement);
+        UpdatePendingWorkerEventCount();
+        NotifyDashboardPropertiesChanged();
+    }
+
+    private void RemoveWorkerInboxEvent(Guid eventId)
+    {
+        var existing = WorkerInboxEvents.FirstOrDefault(workerEvent => workerEvent.EventId == eventId);
+        if (existing is null)
+        {
+            return;
+        }
+
+        WorkerInboxEvents.Remove(existing);
+        UpdatePendingWorkerEventCount();
+        NotifyDashboardPropertiesChanged();
+    }
+
+    private void UpdatePendingWorkerEventCount()
+    {
+        _pendingWorkerEventCount = WorkerInboxEvents.Count(workerEvent =>
+            string.Equals(workerEvent.Status, "Pending", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void TryRestoreViewerSessionFromWorkerEvent(WorkerInboxEventViewModel workerEvent)
+    {
+        if (!workerEvent.AccountId.HasValue || string.IsNullOrWhiteSpace(workerEvent.ActionUrl))
+        {
+            return;
+        }
+
+        if (_viewerSessions.ContainsKey(workerEvent.AccountId.Value))
+        {
+            return;
+        }
+
+        _viewerSessions[workerEvent.AccountId.Value] = new ViewerSessionInfo(
+            workerEvent.ActionUrl,
+            $"{workerEvent.Title}: {workerEvent.ActionUrl}");
+    }
+
+    private void RebuildSelectedNodeAccounts(Guid? preferredAccountId = null)
+    {
+        _selectedNodeAccounts.Clear();
+
+        if (SelectedNode is not null)
+        {
+            _selectedNodeAccounts.AddRange(_allAccounts
+                .Where(account => account.NodeId == SelectedNode.NodeId)
+                .OrderBy(account => account.Email));
+        }
+
+        ApplyVisibleAccountsFilter(preferredAccountId);
+    }
+
     private NodeCardViewModel? ResolveSelectedNode(Guid? preferredNodeId)
     {
         if (preferredNodeId.HasValue)
@@ -772,12 +1118,16 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(TotalAccountCount));
         OnPropertyChanged(nameof(VisibleAccountCount));
         OnPropertyChanged(nameof(ManualRequiredCount));
+        OnPropertyChanged(nameof(PendingWorkerEventCount));
         OnPropertyChanged(nameof(TotalActiveSessions));
         OnPropertyChanged(nameof(NodeThroughputLabel));
         OnPropertyChanged(nameof(AveragePingLabel));
         OnPropertyChanged(nameof(ConnectedNodesSummary));
         OnPropertyChanged(nameof(ProfilesLoadedLabel));
         OnPropertyChanged(nameof(ManualQueueLabel));
+        OnPropertyChanged(nameof(WorkerInboxLabel));
+        OnPropertyChanged(nameof(WorkerInboxModeSummary));
+        OnPropertyChanged(nameof(WorkerInboxEmptyMessage));
         OnPropertyChanged(nameof(AccountsGroupLabel));
         OnPropertyChanged(nameof(SourceBanner));
         OnPropertyChanged(nameof(SelectedNodeTableSummary));
@@ -789,6 +1139,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedNodeWorkerConfigJson));
         OnPropertyChanged(nameof(SelectedNodeDetailVisibility));
         OnPropertyChanged(nameof(SelectedNodePlaceholderVisibility));
+        OnPropertyChanged(nameof(FocusedProxySummary));
+        OnPropertyChanged(nameof(FocusedProxyRotationSummary));
+        OnPropertyChanged(nameof(FocusedProxyRotations));
+        OnPropertyChanged(nameof(FocusedProxyHistoryVisibility));
+        OnPropertyChanged(nameof(FocusedProxyHistoryEmptyVisibility));
         OnPropertyChanged(nameof(TableHint));
         OnPropertyChanged(nameof(DashboardViewVisibility));
         OnPropertyChanged(nameof(AccountsViewVisibility));
@@ -801,6 +1156,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsManualQueueActive));
         OnPropertyChanged(nameof(IsSettingsActive));
         OnPropertyChanged(nameof(ManualQueueEmptyVisibility));
+        OnPropertyChanged(nameof(WorkerInboxEmptyVisibility));
         OnPropertyChanged(nameof(ApiBaseUrlLabel));
         OnPropertyChanged(nameof(DataSourceModeLabel));
         OnPropertyChanged(nameof(SignalRStatusLabel));
@@ -864,6 +1220,33 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         UpdateFocusedViewer(null, "No viewer session has been requested for this account yet.");
+    }
+
+    private void RestorePendingWorkerSessions(IEnumerable<AccountCardViewModel> accounts)
+    {
+        foreach (var account in accounts)
+        {
+            if (!string.Equals(account.Status, "Manual", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(account.Status, "Paused", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            TryRestoreViewerSession(account.AccountId, account.ActiveAlertMessage, account.Email);
+        }
+    }
+
+    private void TryRestoreViewerSession(Guid accountId, string? alertMessage, string? email)
+    {
+        var viewerUrl = ExtractViewerUrl(alertMessage);
+        if (string.IsNullOrWhiteSpace(viewerUrl) || _viewerSessions.ContainsKey(accountId))
+        {
+            return;
+        }
+
+        _viewerSessions[accountId] = new ViewerSessionInfo(
+            viewerUrl,
+            $"Recovered pending worker takeover for {email ?? "account"}: {viewerUrl}");
     }
 
     private void UpdateFocusedViewer(string? url, string message)
@@ -965,6 +1348,71 @@ public sealed class MainWindowViewModel : ViewModelBase
         return IPAddress.TryParse(host, out var ipAddress) && IPAddress.IsLoopback(ipAddress);
     }
 
+    private void ApplyNodeUpdate(Guid nodeId, Func<NodeCardViewModel, NodeCardViewModel> update)
+    {
+        var index = Nodes
+            .Select((node, idx) => new { node, idx })
+            .FirstOrDefault(entry => entry.node.NodeId == nodeId);
+        if (index is null)
+        {
+            return;
+        }
+
+        var updated = update(index.node);
+        Nodes[index.idx] = updated;
+
+        if (_selectedNode?.NodeId == nodeId)
+        {
+            _selectedNode = updated;
+            OnPropertyChanged(nameof(SelectedNode));
+        }
+
+        NotifyDashboardPropertiesChanged();
+    }
+
+    private void ApplyNodeSummary(NodeSummaryResponse node)
+        => ApplyNodeUpdate(node.Id, _ => NodeCardViewModel.FromContract(node));
+
+    private static NodeCardViewModel CloneNode(
+        NodeCardViewModel source,
+        string? status = null,
+        DateTime? lastHeartbeatAtUtc = null,
+        double? cpuPercent = null,
+        double? ramPercent = null,
+        double? diskPercent = null,
+        int? activeSessions = null,
+        int? pingMs = null,
+        string? connectionState = null,
+        string? agentVersion = null)
+        => new()
+        {
+            NodeId = source.NodeId,
+            Name = source.Name,
+            Status = status ?? source.Status,
+            IpAddress = source.IpAddress,
+            SshPort = source.SshPort,
+            SshUsername = source.SshUsername,
+            AuthType = source.AuthType,
+            OsType = source.OsType,
+            Region = source.Region,
+            LastHeartbeatAtUtc = lastHeartbeatAtUtc ?? source.LastHeartbeatAtUtc,
+            CpuPercent = cpuPercent ?? source.CpuPercent,
+            RamPercent = ramPercent ?? source.RamPercent,
+            DiskPercent = diskPercent ?? source.DiskPercent,
+            RamUsedGb = source.RamUsedGb,
+            StorageUsedGb = source.StorageUsedGb,
+            PingMs = pingMs ?? source.PingMs,
+            ActiveSessions = activeSessions ?? source.ActiveSessions,
+            ControlPort = source.ControlPort,
+            ConnectionState = connectionState ?? source.ConnectionState,
+            ConnectionTimeoutSeconds = source.ConnectionTimeoutSeconds,
+            AssignedAccountCount = source.AssignedAccountCount,
+            RunningAccounts = source.RunningAccounts,
+            ManualAccounts = source.ManualAccounts,
+            AlertAccounts = source.AlertAccounts,
+            AgentVersion = agentVersion ?? source.AgentVersion
+        };
+
     private static bool IsManualQueueCandidate(AccountCardViewModel account)
         => account.RequiresManualAttention || !string.IsNullOrWhiteSpace(account.ActiveAlertTitle);
 
@@ -993,15 +1441,20 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         var payload = new
         {
-            NodeId = node.NodeId,
-            BackendBaseUrl = _dataService.CurrentBaseUrl,
-            AgentVersion = string.IsNullOrWhiteSpace(node.AgentVersion) ? "1.0.0" : node.AgentVersion,
-            HeartbeatIntervalSeconds = 15,
-            CommandPollIntervalSeconds = 3,
-            ControlPort = node.ControlPort,
-            ConnectionState = "Connected",
-            ConnectionTimeoutSeconds = 5,
-            CommandScriptsPath = "/opt/fleetmanager-agent/commands"
+            Agent = new
+            {
+                NodeId = node.NodeId,
+                BackendBaseUrl = _dataService.CurrentBaseUrl,
+                AgentVersion = string.IsNullOrWhiteSpace(node.AgentVersion) ? "1.0.0" : node.AgentVersion,
+                HeartbeatIntervalSeconds = 15,
+                CommandPollIntervalSeconds = 3,
+                ControlPort = node.ControlPort,
+                ConnectionState = "Connected",
+                ConnectionTimeoutSeconds = 5,
+                CommandScriptsPath = "/opt/fleetmanager-agent/commands",
+                ApiKey = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_API_KEY") ?? "<set-agent-api-key>",
+                NodeIpAddress = node.IpAddress
+            }
         };
 
         return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
@@ -1009,15 +1462,16 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private static string BuildInstallCommand(NodeCardViewModel node, string apiBaseUrl)
     {
-        // GitHub Repository - Details from your screenshot
-        string githubUser = "chatgptdza-beep";
-        string githubRepo = "FleetManager-Worker";
-        
-        string rawUrl = $"https://raw.githubusercontent.com/{githubUser}/{githubRepo}/main/install.sh";
-        
-        // Command for Linux (Ubuntu/CentOS)
-        return $"ssh {node.SshUsername}@{node.IpAddress} 'curl -s {rawUrl} | sudo bash -s -- {node.NodeId} {apiBaseUrl}'";
+        var sshTarget = $"{node.SshUsername}@{node.IpAddress}";
+        return
+            $"scp -r out/agent {sshTarget}:/tmp/fleetmanager-agent\n" +
+            $"scp -r deploy/linux {sshTarget}:/tmp/fleetmanager-deploy\n" +
+            $"ssh {sshTarget} \"sudo bash /tmp/fleetmanager-deploy/install-worker-ubuntu.sh /tmp/fleetmanager-agent\"\n" +
+            $"bash deploy/linux/register-node.sh --api {ShellEscapeSingleQuoted(apiBaseUrl.Trim())} --admin-password '<set-api-password>' --name {ShellEscapeSingleQuoted(node.Name)} --ip {ShellEscapeSingleQuoted(node.IpAddress)} --ssh-user {ShellEscapeSingleQuoted(node.SshUsername)} --os {ShellEscapeSingleQuoted(node.OsType)} --region {ShellEscapeSingleQuoted(string.IsNullOrWhiteSpace(node.Region) ? "local" : node.Region)}";
     }
+
+    private static string ShellEscapeSingleQuoted(string value)
+        => $"'{value.Replace("'", "'\"'\"'")}'";
 
     private sealed record ViewerSessionInfo(string? Url, string Message);
 }

@@ -1,5 +1,6 @@
 using FleetManager.Domain.Common;
 using FleetManager.Domain.Enums;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace FleetManager.Domain.Entities;
 
@@ -9,7 +10,9 @@ public sealed class VpsNode : BaseEntity
     public string IpAddress { get; set; } = string.Empty;
     public int SshPort { get; set; } = 22;
     public string SshUsername { get; set; } = string.Empty;
+    [NotMapped]
     public string? SshPassword { get; set; }
+    [NotMapped]
     public string? SshPrivateKey { get; set; }
     public string AuthType { get; set; } = "SshKey";
     public string OsType { get; set; } = string.Empty;

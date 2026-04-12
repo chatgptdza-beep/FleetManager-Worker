@@ -1,22 +1,51 @@
+using System.Security.Claims;
+using System.Text;
+using FleetManager.Api.Hubs;
+using FleetManager.Api.Services;
 using FleetManager.Application.Abstractions;
 using FleetManager.Contracts.Agent;
 using FleetManager.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
-using System.Text;
+
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.EnvironmentName);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
+builder.Services.AddHealthChecks();
+builder.Services.AddScoped<IAccountAutomationCoordinator, AccountAutomationCoordinator>();
+builder.Services.AddScoped<IWorkerInboxService, WorkerInboxService>();
 
-// Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("Jwt");
-var secretKey = jwtSettings["Key"] ?? "12345678901234567890123456789012"; // 32 chars minimum
-var encodedKey = Encoding.UTF8.GetBytes(secretKey);
+var jwtIssuer = jwtSettings["Issuer"];
+var jwtAudience = jwtSettings["Audience"];
+var jwtKey = ResolveSecret(
+    builder.Configuration,
+    builder.Environment,
+    "Jwt:Key",
+    fallbackDevelopmentValue: "12345678901234567890123456789012");
+var adminPassword = ResolveSecret(
+    builder.Configuration,
+    builder.Environment,
+    "AdminPassword",
+    fallbackDevelopmentValue: "Admin@FleetMgr2026!");
+var agentApiKey = ResolveSecret(
+    builder.Configuration,
+    builder.Environment,
+    "AgentApiKey",
+    fallbackDevelopmentValue: "MASTER-KEY-12345",
+    "Agent:ApiKey");
+var encodedKey = Encoding.UTF8.GetBytes(jwtKey);
+var corsOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>()?
+    .Where(static origin => !string.IsNullOrWhiteSpace(origin))
+    .ToArray()
+    ?? Array.Empty<string>();
 
 builder.Services.AddAuthentication(options =>
 {
@@ -25,14 +54,16 @@ builder.Services.AddAuthentication(options =>
 })
 .AddJwtBearer(options =>
 {
-    options.RequireHttpsMetadata = false;
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
     options.SaveToken = true;
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(encodedKey),
-        ValidateIssuer = false,
-        ValidateAudience = false,
+        ValidateIssuer = !string.IsNullOrWhiteSpace(jwtIssuer),
+        ValidIssuer = jwtIssuer,
+        ValidateAudience = !string.IsNullOrWhiteSpace(jwtAudience),
+        ValidAudience = jwtAudience,
         ValidateLifetime = true
     };
 });
@@ -40,11 +71,21 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy => policy
-        .AllowAnyHeader()
-        .AllowAnyMethod()
-        .AllowCredentials()
-        .SetIsOriginAllowed(_ => true));
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyHeader().AllowAnyMethod();
+
+        if (corsOrigins.Length > 0)
+        {
+            policy.WithOrigins(corsOrigins).AllowCredentials();
+            return;
+        }
+
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(IsLoopbackOrigin).AllowCredentials();
+        }
+    });
 });
 
 var app = builder.Build();
@@ -66,66 +107,85 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseHttpsRedirection();
-
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseAuthentication();
 
-// Simple API Key Middleware for Agents
+// Machine routes accept either a valid operator JWT or the agent API key.
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/api/agent"))
+    if (RequiresMachineCredential(context.Request.Path))
     {
-        var expectedApiKey = builder.Configuration["AgentApiKey"]
-            ?? builder.Configuration["Agent:ApiKey"]
-            ?? "MASTER-KEY-12345";
-        if (!context.Request.Headers.TryGetValue("X-Api-Key", out var extractedApiKey) || extractedApiKey != expectedApiKey)
+        if (context.User.Identity?.IsAuthenticated == true)
         {
-            context.Response.StatusCode = 401;
-            await context.Response.WriteAsync("Unauthorized agent request");
+            await next(context);
             return;
         }
+
+        var extractedApiKey = context.Request.Headers["X-Api-Key"].ToString().Trim();
+        if (!string.Equals(extractedApiKey, agentApiKey, StringComparison.Ordinal))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsync("Unauthorized machine request");
+            return;
+        }
+
+        context.User = CreateMachinePrincipal();
     }
+
     await next(context);
 });
 
 app.UseAuthorization();
 
-// Operator login — returns a 24-hour JWT the Desktop uses as Bearer token
-app.MapPost("/api/auth/token", (AuthTokenRequest req, IConfiguration config) =>
+app.MapGet("/health", () => Results.Ok(new
 {
-    var adminPassword = config["AdminPassword"] ?? "Admin@FleetMgr2026!";
-    if (req.Password != adminPassword)
-        return Results.Unauthorized();
+    status = "ok",
+    timeUtc = DateTime.UtcNow
+})).AllowAnonymous();
 
-    var key = config["Jwt:Key"] ?? "12345678901234567890123456789012";
-    var keyBytes = Encoding.UTF8.GetBytes(key);
+app.MapPost("/api/auth/token", (AuthTokenRequest request) =>
+{
+    if (request.Password != adminPassword)
+    {
+        return Results.Unauthorized();
+    }
+
+    var claims = new List<Claim>
+    {
+        new("name", "admin"),
+        new(ClaimTypes.Role, "Operator"),
+        new("role", "Operator")
+    };
+
     var tokenDescriptor = new Microsoft.IdentityModel.Tokens.SecurityTokenDescriptor
     {
-        Subject = new System.Security.Claims.ClaimsIdentity(new[]
-        {
-            new System.Security.Claims.Claim("name", "admin"),
-            new System.Security.Claims.Claim("role", "Operator")
-        }),
+        Subject = new ClaimsIdentity(claims),
         Expires = DateTime.UtcNow.AddHours(24),
+        Issuer = jwtIssuer,
+        Audience = jwtAudience,
         SigningCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
-            new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyBytes),
-            Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature)
+            new SymmetricSecurityKey(encodedKey),
+            SecurityAlgorithms.HmacSha256Signature)
     };
+
     var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
     var token = tokenHandler.CreateToken(tokenDescriptor);
     return Results.Ok(new { token = tokenHandler.WriteToken(token) });
 }).AllowAnonymous();
 
 app.MapControllers();
-app.MapHub<FleetManager.Api.Hubs.OperationsHub>("/hubs/operations");
+app.MapHub<OperationsHub>("/hubs/operations");
 
 app.MapPost("/api/agent/heartbeat", async (
     AgentHeartbeatRequest request,
     INodeService nodeService,
-    IHubContext<FleetManager.Api.Hubs.OperationsHub, FleetManager.Api.Hubs.IOperationsClient> hub,
+    IHubContext<OperationsHub, IOperationsClient> hub,
     CancellationToken cancellationToken) =>
 {
-    await nodeService.UpdateHeartbeatAsync(
+    var node = await nodeService.UpdateHeartbeatAsync(
         request.NodeId,
         request.CpuPercent,
         request.RamPercent,
@@ -140,30 +200,116 @@ app.MapPost("/api/agent/heartbeat", async (
         request.AgentVersion,
         cancellationToken);
 
-    // Broadcast real-time heartbeat to all connected Desktop clients
     await hub.Clients.All.SendNodeHeartbeatEvent(
-        request.NodeId,
-        request.CpuPercent,
-        request.RamPercent,
-        request.DiskPercent,
-        request.ActiveSessions,
-        request.PingMs);
+        node);
 
     return Results.Accepted();
 });
 
-app.MapGet("/api/agent/nodes/{nodeId:guid}/commands/next", async (Guid nodeId, INodeService nodeService, CancellationToken cancellationToken) =>
+app.MapGet("/api/agent/nodes/{nodeId:guid}/commands/next", async (
+    Guid nodeId,
+    INodeService nodeService,
+    CancellationToken cancellationToken) =>
 {
     var command = await nodeService.GetNextPendingCommandAsync(nodeId, cancellationToken);
     return command is null ? Results.NoContent() : Results.Ok(command);
 });
 
-app.MapPost("/api/agent/commands/{commandId:guid}/complete", async (Guid commandId, AgentCommandCompletionRequest request, INodeService nodeService, CancellationToken cancellationToken) =>
+app.MapPost("/api/agent/commands/{commandId:guid}/complete", async (
+    Guid commandId,
+    AgentCommandCompletionRequest request,
+    INodeService nodeService,
+    IWorkerInboxService workerInboxService,
+    CancellationToken cancellationToken) =>
 {
     await nodeService.CompleteCommandAsync(request.NodeId, commandId, request.Succeeded, request.ResultMessage, cancellationToken);
+    if (!request.Succeeded)
+    {
+        await workerInboxService.RecordCommandFailureAsync(commandId, cancellationToken);
+    }
     return Results.Accepted();
 });
 
 app.Run();
 
-record AuthTokenRequest(string Password);
+static string ResolveSecret(
+    IConfiguration configuration,
+    IHostEnvironment environment,
+    string key,
+    string? fallbackDevelopmentValue = null,
+    params string[] alternateKeys)
+{
+    var value = configuration[key];
+    if (!string.IsNullOrWhiteSpace(value))
+    {
+        return value.Trim();
+    }
+
+    foreach (var alternateKey in alternateKeys)
+    {
+        value = configuration[alternateKey];
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+    }
+
+    if (environment.IsDevelopment() && !string.IsNullOrWhiteSpace(fallbackDevelopmentValue))
+    {
+        return fallbackDevelopmentValue;
+    }
+
+    throw new InvalidOperationException($"Missing required configuration value '{key}'.");
+}
+
+static bool RequiresMachineCredential(PathString path)
+{
+    if (path.StartsWithSegments("/api/agent"))
+    {
+        return true;
+    }
+
+    var segments = path.Value?
+        .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        ?? Array.Empty<string>();
+
+    if (segments.Length < 4 || !string.Equals(segments[0], "api", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    if (!string.Equals(segments[1], "accounts", StringComparison.OrdinalIgnoreCase))
+    {
+        return false;
+    }
+
+    return (segments.Length == 4 && string.Equals(segments[3], "manual-required", StringComparison.OrdinalIgnoreCase))
+        || (segments.Length == 5
+            && string.Equals(segments[3], "proxies", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(segments[4], "rotate", StringComparison.OrdinalIgnoreCase));
+}
+
+static bool IsLoopbackOrigin(string origin)
+{
+    if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+    {
+        return false;
+    }
+
+    return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase);
+}
+
+static ClaimsPrincipal CreateMachinePrincipal()
+{
+    var identity = new ClaimsIdentity(
+        new[]
+        {
+            new Claim(ClaimTypes.Name, "agent"),
+            new Claim(ClaimTypes.Role, "Agent"),
+            new Claim("role", "Agent")
+        },
+        authenticationType: "ApiKey");
+
+    return new ClaimsPrincipal(identity);
+}

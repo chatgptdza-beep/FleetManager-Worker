@@ -8,7 +8,7 @@ Type=simple
 User=fleetmgr
 Group=fleetmgr
 WorkingDirectory=/opt/fleetmanager-agent
-ExecStart=/opt/fleetmanager-agent/FleetManager.Agent
+ExecStart=/opt/fleetmanager-agent/run-agent.sh
 Restart=always
 RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production

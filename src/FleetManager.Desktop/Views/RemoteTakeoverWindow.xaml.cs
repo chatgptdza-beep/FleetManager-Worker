@@ -32,28 +32,22 @@ public partial class RemoteTakeoverWindow : Window
     private async void CompleteTakeover_Click(object sender, RoutedEventArgs e)
     {
         CompleteTakeoverButton.IsEnabled = false;
-        CompleteTakeoverButton.Content   = "Sending...";
+        CompleteTakeoverButton.Content   = "Saving...";
 
         try
         {
-            var commandId = await _dataService.DispatchNodeCommandAsync(
-                _nodeId,
-                new DispatchNodeCommandRequest
-                {
-                    CommandType = "TakeoverComplete",
-                    PayloadJson = $"{{\"accountId\":\"{_accountId}\"}}"
-                });
+            var updated = await _dataService.CompleteManualTakeoverAsync(_accountId);
 
-            if (commandId.HasValue)
+            if (updated is not null)
             {
                 this.Close();
             }
             else
             {
-                MessageBox.Show("Failed to send TakeoverComplete command. Please try again.",
+                MessageBox.Show("Failed to persist manual takeover completion. Please try again.",
                     "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                 CompleteTakeoverButton.IsEnabled = true;
-                CompleteTakeoverButton.Content   = "Resume Automation (Takeover Complete)";
+                CompleteTakeoverButton.Content   = "Finish Manual Takeover";
             }
         }
         catch (Exception ex)
@@ -61,7 +55,7 @@ public partial class RemoteTakeoverWindow : Window
             MessageBox.Show($"Error completing takeover: {ex.Message}",
                 "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             CompleteTakeoverButton.IsEnabled = true;
-            CompleteTakeoverButton.Content   = "Resume Automation (Takeover Complete)";
+            CompleteTakeoverButton.Content   = "Finish Manual Takeover";
         }
     }
 
@@ -140,4 +134,3 @@ public partial class RemoteTakeoverWindow : Window
         }
     }
 }
-

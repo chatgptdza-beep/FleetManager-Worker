@@ -26,10 +26,25 @@ public static class DependencyInjection
         Guid.Parse("ab0cba77-63a0-4fef-bca0-738f08d2dc55")
     };
 
-    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, string? environmentName = null)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection") 
-            ?? "Host=localhost;Database=FleetManagerDb;Username=postgres;Password=postgres";
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            environmentName ??= configuration["DOTNET_ENVIRONMENT"]
+                ?? configuration["ASPNETCORE_ENVIRONMENT"]
+                ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+                ?? Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
+
+            if (string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase))
+            {
+                connectionString = "Host=localhost;Database=FleetManagerDb;Username=postgres;Password=postgres";
+            }
+            else
+            {
+                throw new InvalidOperationException("Missing connection string 'DefaultConnection'.");
+            }
+        }
             
         services.AddDbContext<AppDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -78,8 +93,10 @@ public static class DependencyInjection
             var alerts = dbContext.AccountAlerts.Where(x => demoAccountIds.Contains(x.AccountId));
             var proxies = dbContext.ProxyEntries.Where(x => demoAccountIds.Contains(x.AccountId));
             var rotationLogs = dbContext.ProxyRotationLogs.Where(x => demoAccountIds.Contains(x.AccountId));
+            var inboxEvents = dbContext.WorkerInboxEvents.Where(x => x.AccountId.HasValue && demoAccountIds.Contains(x.AccountId.Value));
             var accounts = dbContext.Accounts.Where(x => demoAccountIds.Contains(x.Id));
 
+            dbContext.WorkerInboxEvents.RemoveRange(inboxEvents);
             dbContext.ProxyRotationLogs.RemoveRange(rotationLogs);
             dbContext.ProxyEntries.RemoveRange(proxies);
             dbContext.AccountAlerts.RemoveRange(alerts);
@@ -96,6 +113,7 @@ public static class DependencyInjection
 
             if (staleNodeAccountIds.Length > 0)
             {
+                dbContext.WorkerInboxEvents.RemoveRange(dbContext.WorkerInboxEvents.Where(x => x.AccountId.HasValue && staleNodeAccountIds.Contains(x.AccountId.Value)));
                 dbContext.ProxyRotationLogs.RemoveRange(dbContext.ProxyRotationLogs.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
                 dbContext.ProxyEntries.RemoveRange(dbContext.ProxyEntries.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
                 dbContext.AccountAlerts.RemoveRange(dbContext.AccountAlerts.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
@@ -107,8 +125,10 @@ public static class DependencyInjection
         var capabilities = dbContext.NodeCapabilities.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
         var commands = dbContext.NodeCommands.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
         var installJobs = dbContext.AgentInstallJobs.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
+        var nodeInboxEvents = dbContext.WorkerInboxEvents.Where(x => x.VpsNodeId.HasValue && staleDemoNodeIds.Contains(x.VpsNodeId.Value));
         var nodes = dbContext.VpsNodes.Where(x => staleDemoNodeIds.Contains(x.Id));
 
+        dbContext.WorkerInboxEvents.RemoveRange(nodeInboxEvents);
         dbContext.NodeCapabilities.RemoveRange(capabilities);
         dbContext.NodeCommands.RemoveRange(commands);
         dbContext.AgentInstallJobs.RemoveRange(installJobs);

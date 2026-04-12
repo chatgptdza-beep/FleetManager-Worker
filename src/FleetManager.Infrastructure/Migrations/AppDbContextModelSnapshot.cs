@@ -467,6 +467,61 @@ namespace FleetManager.Infrastructure.Migrations
                     b.ToTable("VpsNodes");
                 });
 
+            modelBuilder.Entity("FleetManager.Domain.Entities.WorkerInboxEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("AccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("AcknowledgedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ActionUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("VpsNodeId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("VpsNodeId");
+
+                    b.ToTable("WorkerInboxEvents");
+                });
+
             modelBuilder.Entity("FleetManager.Domain.Entities.Account", b =>
                 {
                     b.HasOne("FleetManager.Domain.Entities.VpsNode", "VpsNode")
@@ -542,6 +597,23 @@ namespace FleetManager.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Account");
+                });
+
+            modelBuilder.Entity("FleetManager.Domain.Entities.WorkerInboxEvent", b =>
+                {
+                    b.HasOne("FleetManager.Domain.Entities.Account", "Account")
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("FleetManager.Domain.Entities.VpsNode", "VpsNode")
+                        .WithMany()
+                        .HasForeignKey("VpsNodeId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("Account");
+
+                    b.Navigation("VpsNode");
                 });
 
             modelBuilder.Entity("FleetManager.Domain.Entities.Account", b =>

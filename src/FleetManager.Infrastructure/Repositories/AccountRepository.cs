@@ -13,6 +13,7 @@ public sealed class AccountRepository(AppDbContext dbContext) : IAccountReposito
             .AsNoTracking()
             .Include(x => x.VpsNode)
             .Include(x => x.Alerts)
+            .Include(x => x.Proxies)
             .AsQueryable();
 
         if (nodeId.HasValue)
@@ -30,6 +31,8 @@ public sealed class AccountRepository(AppDbContext dbContext) : IAccountReposito
             .AsNoTracking()
             .Include(x => x.VpsNode)
             .Include(x => x.Alerts)
+            .Include(x => x.Proxies)
+            .Include(x => x.ProxyRotationLogs)
             .Include(x => x.WorkflowStages)
             .FirstOrDefaultAsync(x => x.Id == accountId, cancellationToken);
 
@@ -37,6 +40,8 @@ public sealed class AccountRepository(AppDbContext dbContext) : IAccountReposito
         => await dbContext.Accounts
             .Include(x => x.VpsNode)
             .Include(x => x.Alerts)
+            .Include(x => x.Proxies)
+            .Include(x => x.ProxyRotationLogs)
             .Include(x => x.WorkflowStages)
             .FirstOrDefaultAsync(x => x.Id == accountId, cancellationToken);
 

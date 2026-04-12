@@ -13,6 +13,12 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
         return accounts.Select(MapSummary).ToList();
     }
 
+    public async Task<AccountSummaryResponse?> GetAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        var account = await accountRepository.GetByIdAsync(accountId, cancellationToken);
+        return account is null ? null : MapSummary(account);
+    }
+
     public async Task<AccountStageAlertDetailsResponse?> GetAccountStageAlertsAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
         var account = await accountRepository.GetByIdAsync(accountId, cancellationToken);
@@ -108,7 +114,9 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
             ActiveAlertSeverity = activeAlert?.Severity.ToString(),
             ActiveAlertStage = activeAlert?.StageName,
             ActiveAlertTitle = activeAlert?.Title,
-            ActiveAlertMessage = activeAlert?.Message
+            ActiveAlertMessage = activeAlert?.Message,
+            CurrentProxyIndex = account.CurrentProxyIndex,
+            ProxyCount = account.Proxies.Count
         };
     }
 
@@ -129,6 +137,19 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
             ActiveAlertStage = activeAlert?.StageName,
             ActiveAlertTitle = activeAlert?.Title,
             ActiveAlertMessage = activeAlert?.Message,
+            CurrentProxyIndex = account.CurrentProxyIndex,
+            ProxyCount = account.Proxies.Count,
+            ProxyRotations = account.ProxyRotationLogs
+                .OrderByDescending(log => log.RotatedAtUtc)
+                .Take(8)
+                .Select(log => new AccountProxyRotationResponse
+                {
+                    FromOrder = log.FromOrder,
+                    ToOrder = log.ToOrder,
+                    Reason = log.Reason,
+                    RotatedAtUtc = log.RotatedAtUtc
+                })
+                .ToList(),
             Stages = account.WorkflowStages
                 .OrderBy(x => x.DisplayOrder)
                 .Select(stage => new AccountWorkflowStageResponse

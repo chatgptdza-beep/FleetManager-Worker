@@ -14,6 +14,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AccountAlert> AccountAlerts => Set<AccountAlert>();
     public DbSet<ProxyEntry> ProxyEntries => Set<ProxyEntry>();
     public DbSet<ProxyRotationLog> ProxyRotationLogs => Set<ProxyRotationLog>();
+    public DbSet<WorkerInboxEvent> WorkerInboxEvents => Set<WorkerInboxEvent>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<VpsNode>(builder =>
@@ -73,6 +74,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.HasMany(x => x.Proxies)
                 .WithOne(x => x.Account)
                 .HasForeignKey(x => x.AccountId);
+            builder.HasMany(x => x.ProxyRotationLogs)
+                .WithOne(x => x.Account)
+                .HasForeignKey(x => x.AccountId);
         });
 
         modelBuilder.Entity<ProxyEntry>(builder =>
@@ -87,6 +91,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             builder.HasKey(x => x.Id);
             builder.Property(x => x.Reason).HasMaxLength(250);
+            builder.HasOne(x => x.Account)
+                .WithMany(x => x.ProxyRotationLogs)
+                .HasForeignKey(x => x.AccountId);
         });
 
         modelBuilder.Entity<AccountWorkflowStage>(builder =>
@@ -104,6 +111,24 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(x => x.StageName).HasMaxLength(100).IsRequired();
             builder.Property(x => x.Severity).HasConversion<string>();
             builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
+        });
+
+        modelBuilder.Entity<WorkerInboxEvent>(builder =>
+        {
+            builder.HasKey(x => x.Id);
+            builder.Property(x => x.EventType).HasConversion<string>();
+            builder.Property(x => x.Status).HasConversion<string>();
+            builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            builder.Property(x => x.Message).HasMaxLength(2000).IsRequired();
+            builder.Property(x => x.ActionUrl).HasMaxLength(1000);
+            builder.HasOne(x => x.Account)
+                .WithMany()
+                .HasForeignKey(x => x.AccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne(x => x.VpsNode)
+                .WithMany()
+                .HasForeignKey(x => x.VpsNodeId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -2,6 +2,7 @@ using FleetManager.Application.Abstractions;
 using FleetManager.Domain.Entities;
 using FleetManager.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 
 namespace FleetManager.Infrastructure.Repositories;
 
@@ -26,6 +27,47 @@ public sealed class NodeRepository(AppDbContext dbContext) : INodeRepository
         => await dbContext.NodeCommands
             .Include(x => x.VpsNode)
             .FirstOrDefaultAsync(x => x.Id == commandId, cancellationToken);
+
+    public async Task<NodeCommand?> ClaimNextPendingCommandAsync(
+        Guid nodeId,
+        DateTime dispatchedAtUtc,
+        DateTime redispatchCutoffUtc,
+        CancellationToken cancellationToken = default)
+    {
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
+
+        var command = await dbContext.NodeCommands
+            .FromSqlInterpolated($@"
+SELECT *
+FROM ""NodeCommands""
+WHERE ""VpsNodeId"" = {nodeId}
+  AND (
+    ""Status"" = {FleetManager.Domain.Enums.CommandStatus.Pending.ToString()}
+    OR (
+      ""Status"" = {FleetManager.Domain.Enums.CommandStatus.Dispatched.ToString()}
+      AND ""UpdatedAtUtc"" IS NOT NULL
+      AND ""UpdatedAtUtc"" <= {redispatchCutoffUtc}
+    )
+  )
+ORDER BY ""CreatedAtUtc""
+LIMIT 1
+FOR UPDATE SKIP LOCKED")
+            .AsTracking()
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (command is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
+        }
+
+        command.Status = FleetManager.Domain.Enums.CommandStatus.Dispatched;
+        command.UpdatedAtUtc = dispatchedAtUtc;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return command;
+    }
 
     public async Task AddAsync(VpsNode node, CancellationToken cancellationToken = default)
         => await dbContext.VpsNodes.AddAsync(node, cancellationToken);

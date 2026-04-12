@@ -25,17 +25,20 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
     {
         var node = new VpsNode
         {
-            Name = request.Name,
-            IpAddress = request.IpAddress,
-            SshPort = request.SshPort,
-            ControlPort = request.ControlPort,
-            SshUsername = request.SshUsername,
-            SshPassword = request.SshPassword,
-            SshPrivateKey = request.SshPrivateKey,
-            AuthType = request.AuthType,
-            OsType = request.OsType,
-            Region = request.Region,
-            Status = NodeStatus.Pending
+            Name = NormalizeRequired(request.Name, nameof(request.Name)),
+            IpAddress = NormalizeRequired(request.IpAddress, nameof(request.IpAddress)),
+            SshPort = NormalizePort(request.SshPort, nameof(request.SshPort)),
+            ControlPort = NormalizePort(request.ControlPort, nameof(request.ControlPort)),
+            SshUsername = NormalizeRequired(request.SshUsername, nameof(request.SshUsername)),
+            // Provisioning secrets are consumed during bootstrap and are not persisted server-side.
+            SshPassword = null,
+            SshPrivateKey = null,
+            AuthType = NormalizeRequired(request.AuthType, nameof(request.AuthType)),
+            OsType = NormalizeRequired(request.OsType, nameof(request.OsType)),
+            Region = NormalizeOptional(request.Region),
+            Status = NodeStatus.Pending,
+            ConnectionState = "Disconnected",
+            ConnectionTimeoutSeconds = 0
         };
 
         await nodeRepository.AddAsync(node, cancellationToken);
@@ -113,26 +116,17 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
 
     public async Task<AgentCommandEnvelopeResponse?> GetNextPendingCommandAsync(Guid nodeId, CancellationToken cancellationToken = default)
     {
-        var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken)
-            ?? throw new InvalidOperationException("Node not found.");
-
         var nowUtc = DateTime.UtcNow;
-        var command = node.Commands
-            .Where(x => x.Status == CommandStatus.Pending
-                || (x.Status == CommandStatus.Dispatched
-                    && x.UpdatedAtUtc.HasValue
-                    && x.UpdatedAtUtc.Value <= nowUtc.AddMinutes(-1)))
-            .OrderBy(x => x.CreatedAtUtc)
-            .FirstOrDefault();
+        var command = await nodeRepository.ClaimNextPendingCommandAsync(
+            nodeId,
+            nowUtc,
+            nowUtc.AddMinutes(-1),
+            cancellationToken);
 
         if (command is null)
         {
             return null;
         }
-
-        command.Status = CommandStatus.Dispatched;
-        command.UpdatedAtUtc = nowUtc;
-        await nodeRepository.SaveChangesAsync(cancellationToken);
 
         return new AgentCommandEnvelopeResponse
         {
@@ -162,10 +156,12 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
         await nodeRepository.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task UpdateHeartbeatAsync(Guid nodeId, double cpuPercent, double ramPercent, double diskPercent, double ramUsedGb, double storageUsedGb, int pingMs, int activeSessions, int controlPort, string connectionState, int connectionTimeoutSeconds, string agentVersion, CancellationToken cancellationToken = default)
+    public async Task<NodeSummaryResponse> UpdateHeartbeatAsync(Guid nodeId, double cpuPercent, double ramPercent, double diskPercent, double ramUsedGb, double storageUsedGb, int pingMs, int activeSessions, int controlPort, string connectionState, int connectionTimeoutSeconds, string agentVersion, CancellationToken cancellationToken = default)
     {
         var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken)
             ?? throw new InvalidOperationException("Node not found.");
+
+        var normalizedConnectionState = NormalizeConnectionState(connectionState, pingMs);
 
         node.LastHeartbeatAtUtc = DateTime.UtcNow;
         node.CpuPercent = cpuPercent;
@@ -176,13 +172,63 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
         node.PingMs = pingMs;
         node.ActiveSessions = activeSessions;
         node.ControlPort = controlPort;
-        node.ConnectionState = string.IsNullOrWhiteSpace(connectionState) ? "Connected" : connectionState.Trim();
+        node.ConnectionState = normalizedConnectionState;
         node.ConnectionTimeoutSeconds = connectionTimeoutSeconds;
-        node.AgentVersion = agentVersion;
-        node.Status = NodeStatus.Online;
+        node.AgentVersion = string.IsNullOrWhiteSpace(agentVersion) ? null : agentVersion.Trim();
+        node.Status = DetermineNodeStatus(cpuPercent, ramPercent, diskPercent, pingMs, normalizedConnectionState);
         node.UpdatedAtUtc = DateTime.UtcNow;
 
         await nodeRepository.SaveChangesAsync(cancellationToken);
+        return Map(node);
+    }
+
+    private static NodeStatus DetermineNodeStatus(double cpuPercent, double ramPercent, double diskPercent, int pingMs, string connectionState)
+    {
+        if (!string.Equals(connectionState, "Connected", StringComparison.OrdinalIgnoreCase))
+        {
+            return NodeStatus.Degraded;
+        }
+
+        if (pingMs < 0 || cpuPercent >= 95 || ramPercent >= 95 || diskPercent >= 95)
+        {
+            return NodeStatus.Degraded;
+        }
+
+        return NodeStatus.Online;
+    }
+
+    private static string NormalizeConnectionState(string connectionState, int pingMs)
+    {
+        if (!string.IsNullOrWhiteSpace(connectionState))
+        {
+            return connectionState.Trim();
+        }
+
+        return pingMs < 0 ? "Degraded" : "Connected";
+    }
+
+    private static string NormalizeRequired(string value, string fieldName)
+    {
+        var trimmed = value.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            throw new InvalidOperationException($"{fieldName} is required.");
+        }
+
+        return trimmed;
+    }
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static int NormalizePort(int port, string fieldName)
+    {
+        if (port is < 1 or > 65535)
+        {
+            throw new InvalidOperationException($"{fieldName} must be between 1 and 65535.");
+        }
+
+        return port;
     }
 
     private static NodeSummaryResponse Map(VpsNode node) => new()

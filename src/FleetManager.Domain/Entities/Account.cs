@@ -20,4 +20,5 @@ public sealed class Account : BaseEntity
     // Proxy Management
     public int CurrentProxyIndex { get; set; } = 0;
     public ICollection<ProxyEntry> Proxies { get; set; } = new List<ProxyEntry>();
+    public ICollection<ProxyRotationLog> ProxyRotationLogs { get; set; } = new List<ProxyRotationLog>();
 }

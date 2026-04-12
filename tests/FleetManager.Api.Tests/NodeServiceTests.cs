@@ -26,7 +26,7 @@ public sealed class NodeServiceTests
         Assert.Equal(9005, node.ControlPort);
         Assert.Equal("Reconnecting", node.ConnectionState);
         Assert.Equal(9, node.ConnectionTimeoutSeconds);
-        Assert.Equal(NodeStatus.Online, node.Status);
+        Assert.Equal(NodeStatus.Degraded, node.Status);
         Assert.Equal(16, summary!.RamUsedGb);
         Assert.Equal(210, summary.StorageUsedGb);
         Assert.Equal(115, summary.PingMs);

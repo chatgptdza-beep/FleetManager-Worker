@@ -14,5 +14,8 @@ public sealed class AccountStageAlertDetailsResponse
     public string? ActiveAlertStage { get; set; }
     public string? ActiveAlertTitle { get; set; }
     public string? ActiveAlertMessage { get; set; }
+    public int CurrentProxyIndex { get; set; }
+    public int ProxyCount { get; set; }
+    public IReadOnlyList<AccountProxyRotationResponse> ProxyRotations { get; set; } = Array.Empty<AccountProxyRotationResponse>();
     public IReadOnlyList<AccountWorkflowStageResponse> Stages { get; set; } = Array.Empty<AccountWorkflowStageResponse>();
 }

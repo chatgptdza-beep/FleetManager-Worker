@@ -10,7 +10,7 @@
         </Grid.RowDefinitions>
         
         <StackPanel Grid.Row="0" Orientation="Horizontal" Background="#2C2C2C" Margin="0,0,0,5">
-            <Button x:Name="CompleteTakeoverButton" Content="Resume Automation (Takeover Complete)" Click="CompleteTakeover_Click" 
+            <Button x:Name="CompleteTakeoverButton" Content="Finish Manual Takeover" Click="CompleteTakeover_Click" 
                     Margin="10" Padding="10" Background="#4CAF50" Foreground="White" FontWeight="Bold"/>
             <Button Content="Copy Remote Clipboard" Click="CopyRemoteClipboard_Click"
                 Margin="10,10,0,10" Padding="10" Background="#1976D2" Foreground="White"/>
