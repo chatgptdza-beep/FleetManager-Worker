@@ -253,8 +253,22 @@ public class SshProvisioningService : ISshProvisioningService
 
         foreach (var file in Directory.GetFiles(localDirectory))
         {
-            using var fileStream = File.OpenRead(file);
-            sftpClient.UploadFile(fileStream, $"{remoteDirectory}/{Path.GetFileName(file)}", true);
+            var remotePath = $"{remoteDirectory}/{Path.GetFileName(file)}";
+            var extension = Path.GetExtension(file);
+
+            // Ensure shell scripts use Unix line endings (LF) even when built on Windows
+            if (string.Equals(extension, ".sh", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(extension, ".service", StringComparison.OrdinalIgnoreCase))
+            {
+                var text = File.ReadAllText(file).Replace("\r\n", "\n").Replace("\r", "\n");
+                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text));
+                sftpClient.UploadFile(stream, remotePath, true);
+            }
+            else
+            {
+                using var fileStream = File.OpenRead(file);
+                sftpClient.UploadFile(fileStream, remotePath, true);
+            }
         }
     }
 
