@@ -7,6 +7,7 @@ public interface INodeRepository
     Task<IReadOnlyList<VpsNode>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<VpsNode?> GetByIdAsync(Guid nodeId, CancellationToken cancellationToken = default);
     Task<VpsNode?> GetByIdReadOnlyAsync(Guid nodeId, CancellationToken cancellationToken = default);
+    Task<VpsNode?> GetByIpAddressAsync(string ipAddress, CancellationToken cancellationToken = default);
     Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default);
     Task<NodeCommand?> ClaimNextPendingCommandAsync(Guid nodeId, DateTime dispatchedAtUtc, DateTime redispatchCutoffUtc, CancellationToken cancellationToken = default);
     Task AddAsync(VpsNode node, CancellationToken cancellationToken = default);

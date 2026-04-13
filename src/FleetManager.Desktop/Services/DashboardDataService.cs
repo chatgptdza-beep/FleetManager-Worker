@@ -61,9 +61,32 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         using var response = await _httpClient.PostAsJsonAsync("api/nodes", request, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException($"Duplicate VPS: {body}");
+        }
+
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<NodeSummaryResponse>(cancellationToken: cancellationToken)
             ?? throw new InvalidOperationException("Node creation returned no payload.");
+    }
+
+    public async Task<NodeSummaryResponse?> UpdateNodeStatusAsync(Guid nodeId, string status, CancellationToken cancellationToken = default)
+    {
+        await EnsureAuthenticatedAsync(cancellationToken);
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"api/nodes/{nodeId}/status")
+        {
+            Content = JsonContent.Create(new { Status = status })
+        };
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NodeSummaryResponse>(cancellationToken: cancellationToken);
     }
 
     public async Task<IReadOnlyList<AccountSummaryResponse>> GetAccountsAsync(Guid? nodeId = null, CancellationToken cancellationToken = default)

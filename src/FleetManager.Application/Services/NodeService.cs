@@ -23,6 +23,13 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
 
     public async Task<NodeSummaryResponse> CreateNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
     {
+        var normalizedIp = NormalizeRequired(request.IpAddress, nameof(request.IpAddress));
+        var existing = await nodeRepository.GetByIpAddressAsync(normalizedIp, cancellationToken);
+        if (existing is not null)
+        {
+            throw new InvalidOperationException($"A VPS with IP address '{normalizedIp}' already exists (Name: {existing.Name}, Id: {existing.Id}).");
+        }
+
         var node = new VpsNode
         {
             Name = NormalizeRequired(request.Name, nameof(request.Name)),
@@ -42,6 +49,22 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
         };
 
         await nodeRepository.AddAsync(node, cancellationToken);
+        await nodeRepository.SaveChangesAsync(cancellationToken);
+        return Map(node);
+    }
+
+    public async Task<NodeSummaryResponse?> UpdateNodeStatusAsync(Guid nodeId, string status, CancellationToken cancellationToken = default)
+    {
+        var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken);
+        if (node is null) return null;
+
+        if (!Enum.TryParse<NodeStatus>(status, ignoreCase: true, out var newStatus))
+        {
+            throw new InvalidOperationException($"Invalid status value: '{status}'. Valid values: {string.Join(", ", Enum.GetNames<NodeStatus>())}.");
+        }
+
+        node.Status = newStatus;
+        node.UpdatedAtUtc = DateTime.UtcNow;
         await nodeRepository.SaveChangesAsync(cancellationToken);
         return Map(node);
     }

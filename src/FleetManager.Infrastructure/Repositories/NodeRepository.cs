@@ -30,6 +30,11 @@ public sealed class NodeRepository(AppDbContext dbContext) : INodeRepository
             .ThenInclude(x => x.Alerts)
             .FirstOrDefaultAsync(x => x.Id == nodeId, cancellationToken);
 
+    public async Task<VpsNode?> GetByIpAddressAsync(string ipAddress, CancellationToken cancellationToken = default)
+        => await dbContext.VpsNodes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.IpAddress == ipAddress, cancellationToken);
+
     public async Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default)
         => await dbContext.NodeCommands
             .Include(x => x.VpsNode)

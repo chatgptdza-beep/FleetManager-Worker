@@ -1,22 +1,18 @@
 using System;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using FleetManager.Contracts.Nodes;
 using Renci.SshNet;
-using Renci.SshNet.Sftp;
 
 namespace FleetManager.Desktop.Services;
 
 public class SshProvisioningService : ISshProvisioningService
 {
-    private const string RemotePackageDir = "/tmp/fleetmanager-agent";
-    private const string RemoteDeployDir = "/tmp/fleetmanager-deploy";
-    private const string RemoteConfigPath = "/tmp/fleetmanager-agent.appsettings.json";
-    private const string ChecksumManifestName = ".fleetmanager.sha256";
+    private const string DefaultRepoUrl = "https://github.com/chatgptdza-beep/FleetManager-Worker.git";
+    private const string DefaultBranch = "main";
 
     public async Task<bool> TestConnectionAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
     {
@@ -72,48 +68,64 @@ public class SshProvisioningService : ISshProvisioningService
 
     public async Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
+        var repoUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_URL") ?? DefaultRepoUrl;
+        var branch = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_BRANCH") ?? DefaultBranch;
+
         await Task.Run(() =>
         {
-            progress?.Report("%30");
-            progress?.Report("[1/6] Resolving local agent package...");
-            var packageDirectory = ResolveAgentPackageDirectory();
-            var deployDirectory = ResolveLinuxDeployDirectory();
             var connectionInfo = CreateConnectionInfo(request);
+            using var client = new SshClient(connectionInfo);
+            client.Connect();
 
-            progress?.Report("%35");
-            progress?.Report("[2/6] Connecting via SSH + SFTP...");
-            using var sshClient = new SshClient(connectionInfo);
-            using var sftpClient = new SftpClient(connectionInfo);
+            progress?.Report("%30");
+            progress?.Report("[1/6] Installing system dependencies...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y " +
+                "ca-certificates curl git python3 procps xz-utils xvfb x11vnc fluxbox novnc websockify"),
+                TimeSpan.FromMinutes(5), progress);
 
-            sshClient.Connect();
-            sftpClient.Connect();
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 || " +
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || " +
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || true"),
+                TimeSpan.FromMinutes(3), progress);
+            progress?.Report("%38");
 
-            EnsureRemoteDirectory(sftpClient, RemotePackageDir);
-            EnsureRemoteDirectory(sftpClient, RemoteDeployDir);
+            progress?.Report("[2/6] Installing .NET 8 runtime...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "command -v dotnet >/dev/null 2>&1 || { " +
+                "curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh && " +
+                "bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet && " +
+                "ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet && " +
+                "rm -f /tmp/dotnet-install.sh; }"),
+                TimeSpan.FromMinutes(5), progress);
+            progress?.Report("%48");
 
-            progress?.Report("%40");
-            progress?.Report("[3/6] Cleaning remote directories...");
-            ExecuteChecked(sshClient, $"rm -rf {Quote(RemotePackageDir)}/* {Quote(RemoteDeployDir)}/*", TimeSpan.FromMinutes(1), progress);
-
-            progress?.Report("%45");
-            progress?.Report("[4/6] Uploading agent package via SFTP...");
-            UploadDirectory(sftpClient, packageDirectory, RemotePackageDir);
-            UploadDirectory(sftpClient, deployDirectory, RemoteDeployDir);
-            UploadTextFile(sftpClient, $"{RemotePackageDir}/{ChecksumManifestName}", BuildChecksumManifest(packageDirectory));
+            progress?.Report("[3/6] Cloning repository...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                $"rm -rf /tmp/fleetmanager-repo && git clone --depth 1 --branch {Quote(branch)} {Quote(repoUrl)} /tmp/fleetmanager-repo"),
+                TimeSpan.FromMinutes(3), progress);
             progress?.Report("%55");
-            progress?.Report("[4/6] Upload complete.");
 
-            progress?.Report("[5/6] Running install-worker-ubuntu.sh (this may take a few minutes)...");
-            var installCommand = BuildElevatedCommand(
-                request,
-                $"bash {Quote($"{RemoteDeployDir}/install-worker-ubuntu.sh")} {Quote(RemotePackageDir)}");
-            ExecuteChecked(sshClient, installCommand, TimeSpan.FromMinutes(10), progress);
+            progress?.Report("[4/6] Building agent (dotnet publish — this may take a few minutes)...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "cd /tmp/fleetmanager-repo/src/FleetManager.Agent && " +
+                "dotnet publish -c Release -r linux-x64 --self-contained false -o /tmp/fleetmanager-build"),
+                TimeSpan.FromMinutes(8), progress);
+            progress?.Report("%68");
+
+            progress?.Report("[5/6] Running install script...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "bash /tmp/fleetmanager-repo/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-build"),
+                TimeSpan.FromMinutes(3), progress);
             progress?.Report("%75");
-            progress?.Report("[5/6] Install script completed.");
 
-            progress?.Report("[6/6] Disconnecting...");
-            sftpClient.Disconnect();
-            sshClient.Disconnect();
+            progress?.Report("[6/6] Cleaning up build artifacts...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "rm -rf /tmp/fleetmanager-repo /tmp/fleetmanager-build"),
+                TimeSpan.FromMinutes(1), progress);
+
+            client.Disconnect();
             progress?.Report("Agent installation finished successfully.");
         }, cancellationToken);
     }
@@ -124,12 +136,6 @@ public class SshProvisioningService : ISshProvisioningService
         {
             progress?.Report("%82");
             progress?.Report("Configuring agent appsettings...");
-            var connectionInfo = CreateConnectionInfo(request);
-            using var sshClient = new SshClient(connectionInfo);
-            using var sftpClient = new SftpClient(connectionInfo);
-
-            sshClient.Connect();
-            sftpClient.Connect();
 
             var configJson = JsonSerializer.Serialize(new
             {
@@ -149,16 +155,27 @@ public class SshProvisioningService : ISshProvisioningService
                 }
             }, new JsonSerializerOptions { WriteIndented = true });
 
-            UploadTextFile(sftpClient, RemoteConfigPath, configJson);
-            progress?.Report("%88");
-            progress?.Report("Deploying appsettings and restarting agent service...");
-            var configureCommand = BuildElevatedCommand(
-                request,
-                $"install -m 600 {Quote(RemoteConfigPath)} /opt/fleetmanager-agent/appsettings.json && chown fleetmgr:fleetmgr /opt/fleetmanager-agent/appsettings.json && systemctl restart fleetmanager-agent");
-            ExecuteChecked(sshClient, configureCommand, TimeSpan.FromMinutes(2), progress);
+            // Encode config as base64 to avoid shell escaping issues (no SFTP needed)
+            var configBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson));
 
-            sftpClient.Disconnect();
-            sshClient.Disconnect();
+            var connectionInfo = CreateConnectionInfo(request);
+            using var client = new SshClient(connectionInfo);
+            client.Connect();
+
+            // Write config via base64 decode — safe for any JSON content
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                $"echo {Quote(configBase64)} | base64 -d > /opt/fleetmanager-agent/appsettings.json"),
+                TimeSpan.FromMinutes(1), progress);
+
+            progress?.Report("%88");
+            progress?.Report("Setting permissions and restarting agent service...");
+            ExecuteStreaming(client, BuildElevatedCommand(request,
+                "chown fleetmgr:fleetmgr /opt/fleetmanager-agent/appsettings.json && " +
+                "chmod 600 /opt/fleetmanager-agent/appsettings.json && " +
+                "systemctl restart fleetmanager-agent"),
+                TimeSpan.FromMinutes(2), progress);
+
+            client.Disconnect();
             progress?.Report("%93");
             progress?.Report("Agent configured and restarted successfully.");
         }, cancellationToken);
@@ -172,169 +189,45 @@ public class SshProvisioningService : ISshProvisioningService
             return configured.Trim();
         }
 
-        // For any URL (including localhost), use the default key when no env var is set.
-        // The API should validate this key; in dev mode the hardcoded key is accepted.
         return "MASTER-KEY-12345";
     }
 
-    private static string BuildChecksumManifest(string localDirectory)
+    /// <summary>
+    /// Execute a remote SSH command and stream stdout lines to the progress reporter in real time.
+    /// Uses BeginExecute + OutputStream so output appears as it is produced.
+    /// </summary>
+    private static void ExecuteStreaming(SshClient client, string commandText, TimeSpan timeout, IProgress<string>? progress)
     {
-        var files = Directory
-            .EnumerateFiles(localDirectory, "*", SearchOption.AllDirectories)
-            .Where(file => !string.Equals(Path.GetFileName(file), ChecksumManifestName, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (files.Length == 0)
-        {
-            throw new InvalidOperationException("Agent package directory is empty.");
-        }
-
-        var builder = new StringBuilder();
-        foreach (var file in files)
-        {
-            using var stream = File.OpenRead(file);
-            var hash = SHA256.HashData(stream);
-            var relativePath = Path.GetRelativePath(localDirectory, file).Replace('\\', '/');
-            builder.Append(Convert.ToHexString(hash).ToLowerInvariant())
-                .Append("  ")
-                .Append(relativePath)
-                .AppendLine();
-        }
-
-        return builder.ToString();
-    }
-
-    private static string ResolveAgentPackageDirectory()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(Environment.CurrentDirectory, "out", "agent"),
-            Path.Combine(AppContext.BaseDirectory, "out", "agent"),
-            Path.Combine(Environment.CurrentDirectory, "md file", "01_full_project_latest", "out", "agent"),
-            Path.Combine(AppContext.BaseDirectory, "md file", "01_full_project_latest", "out", "agent"),
-            Path.Combine(Environment.CurrentDirectory, "src", "FleetManager.Agent", "bin", "Release", "net8.0", "linux-x64", "publish"),
-            Path.Combine(AppContext.BaseDirectory, "src", "FleetManager.Agent", "bin", "Release", "net8.0", "linux-x64", "publish"),
-            Path.Combine(Environment.CurrentDirectory, "src", "FleetManager.Agent", "bin", "Debug", "net8.0", "linux-x64", "publish"),
-            Path.Combine(AppContext.BaseDirectory, "src", "FleetManager.Agent", "bin", "Debug", "net8.0", "linux-x64", "publish"),
-            Path.Combine(Environment.CurrentDirectory, "src", "FleetManager.Agent", "bin", "Debug", "net8.0"),
-            Path.Combine(AppContext.BaseDirectory, "src", "FleetManager.Agent", "bin", "Debug", "net8.0")
-        };
-
-        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (Directory.Exists(candidate)
-                && (File.Exists(Path.Combine(candidate, "FleetManager.Agent"))
-                    || File.Exists(Path.Combine(candidate, "FleetManager.Agent.exe"))
-                    || File.Exists(Path.Combine(candidate, "FleetManager.Agent.dll"))))
-            {
-                return candidate;
-            }
-        }
-
-        throw new InvalidOperationException(
-            "Unable to locate a local FleetManager.Agent package to upload. Run scripts/publish-agent.ps1 first.");
-    }
-
-    private static string ResolveLinuxDeployDirectory()
-    {
-        var candidates = new[]
-        {
-            Path.Combine(Environment.CurrentDirectory, "deploy", "linux"),
-            Path.Combine(AppContext.BaseDirectory, "deploy", "linux"),
-            Path.Combine(Environment.CurrentDirectory, "md file", "01_full_project_latest", "deploy", "linux"),
-            Path.Combine(AppContext.BaseDirectory, "md file", "01_full_project_latest", "deploy", "linux")
-        };
-
-        foreach (var candidate in candidates.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "install-worker-ubuntu.sh")))
-            {
-                return candidate;
-            }
-        }
-
-        throw new InvalidOperationException("Unable to locate local deploy/linux assets required for worker installation.");
-    }
-
-    private static void UploadDirectory(SftpClient sftpClient, string localDirectory, string remoteDirectory)
-    {
-        EnsureRemoteDirectory(sftpClient, remoteDirectory);
-
-        foreach (var directory in Directory.GetDirectories(localDirectory))
-        {
-            var remoteChild = $"{remoteDirectory}/{Path.GetFileName(directory)}";
-            UploadDirectory(sftpClient, directory, remoteChild);
-        }
-
-        foreach (var file in Directory.GetFiles(localDirectory))
-        {
-            var remotePath = $"{remoteDirectory}/{Path.GetFileName(file)}";
-            var extension = Path.GetExtension(file);
-
-            // Ensure shell scripts use Unix line endings (LF) even when built on Windows
-            if (string.Equals(extension, ".sh", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(extension, ".service", StringComparison.OrdinalIgnoreCase))
-            {
-                var text = File.ReadAllText(file).Replace("\r\n", "\n").Replace("\r", "\n");
-                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text));
-                sftpClient.UploadFile(stream, remotePath, true);
-            }
-            else
-            {
-                using var fileStream = File.OpenRead(file);
-                sftpClient.UploadFile(fileStream, remotePath, true);
-            }
-        }
-    }
-
-    private static void UploadTextFile(SftpClient sftpClient, string remotePath, string content)
-    {
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-        sftpClient.UploadFile(stream, remotePath, true);
-    }
-
-    private static void EnsureRemoteDirectory(SftpClient sftpClient, string remoteDirectory)
-    {
-        var parts = remoteDirectory.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var current = remoteDirectory.StartsWith("/", StringComparison.Ordinal) ? "/" : string.Empty;
-
-        foreach (var part in parts)
-        {
-            current = string.IsNullOrEmpty(current) || current == "/" ? $"{current}{part}" : $"{current}/{part}";
-            if (!sftpClient.Exists(current))
-            {
-                sftpClient.CreateDirectory(current);
-            }
-        }
-    }
-
-    private static void ExecuteChecked(SshClient client, string commandText, TimeSpan timeout, IProgress<string>? progress = null)
-    {
-        var command = client.CreateCommand(commandText);
+        using var command = client.CreateCommand(commandText);
         command.CommandTimeout = timeout;
-        var output = command.Execute();
+        var asyncResult = command.BeginExecute();
 
-        if (!string.IsNullOrWhiteSpace(output))
+        // Read stdout lines in real-time — OutputStream blocks until data arrives or EOF
+        using var reader = new StreamReader(command.OutputStream, Encoding.UTF8);
+        while (!reader.EndOfStream)
         {
-            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            var line = reader.ReadLine();
+            if (line != null)
             {
-                progress?.Report($"  > {line.TrimEnd()}");
+                progress?.Report($"  > {line}");
             }
         }
 
+        command.EndExecute(asyncResult);
+
+        // Report stderr after completion
         if (!string.IsNullOrWhiteSpace(command.Error))
         {
-            foreach (var line in command.Error.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var errLine in command.Error.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             {
-                progress?.Report($"  [err] {line.TrimEnd()}");
+                progress?.Report($"  [err] {errLine.TrimEnd()}");
             }
         }
 
         if (command.ExitStatus != 0)
         {
             throw new InvalidOperationException(
-                $"Remote command failed with exit code {command.ExitStatus}: {command.Error}{Environment.NewLine}{output}");
+                $"Remote command failed with exit code {command.ExitStatus}: {command.Error}");
         }
     }
 

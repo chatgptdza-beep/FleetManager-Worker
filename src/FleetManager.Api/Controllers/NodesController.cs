@@ -24,8 +24,22 @@ public sealed class NodesController(INodeService nodeService) : ControllerBase
     [HttpPost]
     public async Task<ActionResult<NodeSummaryResponse>> CreateAsync([FromBody] CreateNodeRequest request, CancellationToken cancellationToken)
     {
-        var created = await nodeService.CreateNodeAsync(request, cancellationToken);
-        return Created($"/api/nodes/{created.Id}", created);
+        try
+        {
+            var created = await nodeService.CreateNodeAsync(request, cancellationToken);
+            return Created($"/api/nodes/{created.Id}", created);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists"))
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    [HttpPatch("{nodeId:guid}/status")]
+    public async Task<ActionResult<NodeSummaryResponse>> UpdateStatusAsync(Guid nodeId, [FromBody] UpdateNodeStatusRequest request, CancellationToken cancellationToken)
+    {
+        var updated = await nodeService.UpdateNodeStatusAsync(nodeId, request.Status, cancellationToken);
+        return updated is null ? NotFound() : Ok(updated);
     }
 
     [HttpDelete("{nodeId:guid}")]

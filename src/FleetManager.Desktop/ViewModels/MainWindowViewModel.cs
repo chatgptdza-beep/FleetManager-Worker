@@ -549,6 +549,12 @@ public sealed class MainWindowViewModel : ViewModelBase
             await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, agentApiUrl, installProgress, cancellationToken);
             installProgress?.Report("%95");
 
+            // Mark the node as Online now that agent is installed and configured.
+            // The agent heartbeat will maintain the status going forward.
+            installProgress?.Report("Updating node status to Online...");
+            await _dataService.UpdateNodeStatusAsync(created.Id, "Online");
+            installProgress?.Report("%98");
+
             await ReloadAsync(created.Id);
             StatusMessage = $"Added {created.Name} | NodeId: {created.Id} | Auto-Installer {(agentRunning ? "Skipped" : "Success")} | {SourceBanner}";
             installProgress?.Report($"Done. Node '{created.Name}' is ready.");

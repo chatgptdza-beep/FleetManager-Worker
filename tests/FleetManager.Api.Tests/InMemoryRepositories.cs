@@ -16,6 +16,9 @@ internal sealed class InMemoryNodeRepository : INodeRepository
     public Task<VpsNode?> GetByIdReadOnlyAsync(Guid nodeId, CancellationToken cancellationToken = default)
         => Task.FromResult(Nodes.FirstOrDefault(node => node.Id == nodeId));
 
+    public Task<VpsNode?> GetByIpAddressAsync(string ipAddress, CancellationToken cancellationToken = default)
+        => Task.FromResult(Nodes.FirstOrDefault(node => string.Equals(node.IpAddress, ipAddress, StringComparison.OrdinalIgnoreCase)));
+
     public Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default)
         => Task.FromResult(Nodes.SelectMany(node => node.Commands).FirstOrDefault(command => command.Id == commandId));
 
