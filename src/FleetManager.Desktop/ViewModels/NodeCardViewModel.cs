@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Media;
 using FleetManager.Contracts.Nodes;
 using FleetManager.Desktop.Styling;
@@ -35,8 +36,12 @@ public sealed class NodeCardViewModel
 
     public string NodeDisplayName => $"{Name} - {IpAddress}";
     public bool IsConnected => string.Equals(ConnectionState, "Connected", StringComparison.OrdinalIgnoreCase);
+    public bool IsPending => string.Equals(Status, "Pending", StringComparison.OrdinalIgnoreCase);
+    public Visibility InstallBarVisibility => IsPending ? Visibility.Visible : Visibility.Collapsed;
+    public string InstallStatusLabel => IsPending ? "Installing agent..." : string.Empty;
     public string HealthChipLabel => Status switch
     {
+        "Pending" => "Installing",
         "Offline" => "Alert",
         "Degraded" => "Watch",
         _ when string.Equals(ConnectionState, "Degraded", StringComparison.OrdinalIgnoreCase) => "Alert",
@@ -47,14 +52,14 @@ public sealed class NodeCardViewModel
     public Brush HealthChipBackground => HealthChipLabel switch
     {
         "Stable" => UiPalette.SuccessBackground,
-        "Watch" => UiPalette.WarningBackground,
+        "Watch" or "Installing" => UiPalette.WarningBackground,
         _ => UiPalette.CriticalBackground
     };
 
     public Brush HealthChipForeground => HealthChipLabel switch
     {
         "Stable" => UiPalette.SuccessForeground,
-        "Watch" => UiPalette.WarningForeground,
+        "Watch" or "Installing" => UiPalette.WarningForeground,
         _ => UiPalette.CriticalForeground
     };
 

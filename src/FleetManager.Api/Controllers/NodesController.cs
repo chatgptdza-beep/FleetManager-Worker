@@ -25,7 +25,7 @@ public sealed class NodesController(INodeService nodeService) : ControllerBase
     public async Task<ActionResult<NodeSummaryResponse>> CreateAsync([FromBody] CreateNodeRequest request, CancellationToken cancellationToken)
     {
         var created = await nodeService.CreateNodeAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetByIdAsync), new { nodeId = created.Id }, created);
+        return Created($"/api/nodes/{created.Id}", created);
     }
 
     [HttpDelete("{nodeId:guid}")]

@@ -494,38 +494,54 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Created {created.Email} | {SourceBanner}";
     }
 
-    public async Task CreateNodeAsync(CreateNodeRequest request)
+    public async Task CreateNodeAsync(CreateNodeRequest request, IProgress<string>? installProgress = null)
     {
+        StatusMessage = "Testing SSH Connection...";
+        installProgress?.Report("Testing SSH connection...");
+        if (!await _sshProvisioningService.TestConnectionAsync(request))
+        {
+            throw new InvalidOperationException("SSH Connection Failed. Verify credentials.");
+        }
+        installProgress?.Report("SSH connection OK.");
+
+        // Register node in API first so it appears in the UI immediately
+        StatusMessage = "Registering node with API...";
+        installProgress?.Report("Registering node with API...");
+        var created = await _dataService.CreateNodeAsync(request);
+        await ReloadAsync(created.Id);
+        StatusMessage = $"Node '{created.Name}' registered. Installing agent...";
+        installProgress?.Report($"Node registered: {created.Id}");
+
         try
         {
-            StatusMessage = "Testing SSH Connection...";
-            if (!await _sshProvisioningService.TestConnectionAsync(request))
-            {
-                throw new InvalidOperationException("SSH Connection Failed. Verify credentials.");
-            }
-
             StatusMessage = "Checking if Agent is already running...";
+            installProgress?.Report("Checking if agent is already running...");
             bool agentRunning = await _sshProvisioningService.IsAgentRunningAsync(request);
 
             if (!agentRunning)
             {
-                StatusMessage = "Installing FleetManager Agent. This may take a few minutes...";
-                await _sshProvisioningService.InstallAgentAsync(request, _dataService.CurrentBaseUrl);
+                StatusMessage = "Installing FleetManager Agent...";
+                installProgress?.Report("Starting agent installation...");
+                await _sshProvisioningService.InstallAgentAsync(request, _dataService.CurrentBaseUrl, installProgress);
+            }
+            else
+            {
+                installProgress?.Report("Agent already running — skipping install.");
             }
 
-            StatusMessage = "Registering node with API...";
-            var created = await _dataService.CreateNodeAsync(request);
-
             StatusMessage = "Configuring agent appsettings and restarting worker...";
-            await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, _dataService.CurrentBaseUrl);
+            installProgress?.Report("Configuring agent appsettings...");
+            await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, _dataService.CurrentBaseUrl, installProgress);
 
             await ReloadAsync(created.Id);
             StatusMessage = $"Added {created.Name} | NodeId: {created.Id} | Auto-Installer {(agentRunning ? "Skipped" : "Success")} | {SourceBanner}";
+            installProgress?.Report($"Done. Node '{created.Name}' is ready.");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Auto-Installer failed: {ex.Message}";
-            throw; // Re-throw so MainWindow.xaml.cs can show it in MessageBox if needed
+            StatusMessage = $"Node registered but agent install failed: {ex.Message}";
+            installProgress?.Report($"ERROR: {ex.Message}");
+            throw;
         }
     }
 

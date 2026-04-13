@@ -70,14 +70,16 @@ public class SshProvisioningService : ISshProvisioningService
         }, cancellationToken);
     }
 
-    public async Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, CancellationToken cancellationToken = default)
+    public async Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
         await Task.Run(() =>
         {
+            progress?.Report("[1/6] Resolving local agent package...");
             var packageDirectory = ResolveAgentPackageDirectory();
             var deployDirectory = ResolveLinuxDeployDirectory();
             var connectionInfo = CreateConnectionInfo(request);
 
+            progress?.Report("[2/6] Connecting via SSH + SFTP...");
             using var sshClient = new SshClient(connectionInfo);
             using var sftpClient = new SftpClient(connectionInfo);
 
@@ -87,25 +89,34 @@ public class SshProvisioningService : ISshProvisioningService
             EnsureRemoteDirectory(sftpClient, RemotePackageDir);
             EnsureRemoteDirectory(sftpClient, RemoteDeployDir);
 
-            ExecuteChecked(sshClient, $"rm -rf {Quote(RemotePackageDir)}/* {Quote(RemoteDeployDir)}/*", TimeSpan.FromMinutes(1));
+            progress?.Report("[3/6] Cleaning remote directories...");
+            ExecuteChecked(sshClient, $"rm -rf {Quote(RemotePackageDir)}/* {Quote(RemoteDeployDir)}/*", TimeSpan.FromMinutes(1), progress);
+
+            progress?.Report("[4/6] Uploading agent package via SFTP...");
             UploadDirectory(sftpClient, packageDirectory, RemotePackageDir);
             UploadDirectory(sftpClient, deployDirectory, RemoteDeployDir);
             UploadTextFile(sftpClient, $"{RemotePackageDir}/{ChecksumManifestName}", BuildChecksumManifest(packageDirectory));
+            progress?.Report("[4/6] Upload complete.");
 
+            progress?.Report("[5/6] Running install-worker-ubuntu.sh (this may take a few minutes)...");
             var installCommand = BuildElevatedCommand(
                 request,
                 $"bash {Quote($"{RemoteDeployDir}/install-worker-ubuntu.sh")} {Quote(RemotePackageDir)}");
-            ExecuteChecked(sshClient, installCommand, TimeSpan.FromMinutes(10));
+            ExecuteChecked(sshClient, installCommand, TimeSpan.FromMinutes(10), progress);
+            progress?.Report("[5/6] Install script completed.");
 
+            progress?.Report("[6/6] Disconnecting...");
             sftpClient.Disconnect();
             sshClient.Disconnect();
+            progress?.Report("Agent installation finished successfully.");
         }, cancellationToken);
     }
 
-    public async Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, CancellationToken cancellationToken = default)
+    public async Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
         await Task.Run(() =>
         {
+            progress?.Report("Configuring agent appsettings...");
             var connectionInfo = CreateConnectionInfo(request);
             using var sshClient = new SshClient(connectionInfo);
             using var sftpClient = new SftpClient(connectionInfo);
@@ -132,13 +143,15 @@ public class SshProvisioningService : ISshProvisioningService
             }, new JsonSerializerOptions { WriteIndented = true });
 
             UploadTextFile(sftpClient, RemoteConfigPath, configJson);
+            progress?.Report("Deploying appsettings and restarting agent service...");
             var configureCommand = BuildElevatedCommand(
                 request,
                 $"install -m 600 {Quote(RemoteConfigPath)} /opt/fleetmanager-agent/appsettings.json && chown fleetmgr:fleetmgr /opt/fleetmanager-agent/appsettings.json && systemctl restart fleetmanager-agent");
-            ExecuteChecked(sshClient, configureCommand, TimeSpan.FromMinutes(2));
+            ExecuteChecked(sshClient, configureCommand, TimeSpan.FromMinutes(2), progress);
 
             sftpClient.Disconnect();
             sshClient.Disconnect();
+            progress?.Report("Agent configured and restarted successfully.");
         }, cancellationToken);
     }
 
@@ -293,11 +306,27 @@ public class SshProvisioningService : ISshProvisioningService
         }
     }
 
-    private static void ExecuteChecked(SshClient client, string commandText, TimeSpan timeout)
+    private static void ExecuteChecked(SshClient client, string commandText, TimeSpan timeout, IProgress<string>? progress = null)
     {
         var command = client.CreateCommand(commandText);
         command.CommandTimeout = timeout;
         var output = command.Execute();
+
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                progress?.Report($"  > {line.TrimEnd()}");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(command.Error))
+        {
+            foreach (var line in command.Error.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                progress?.Report($"  [err] {line.TrimEnd()}");
+            }
+        }
 
         if (command.ExitStatus != 0)
         {

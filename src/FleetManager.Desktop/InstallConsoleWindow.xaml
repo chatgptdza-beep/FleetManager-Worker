@@ -1,0 +1,47 @@
+<Window x:Class="FleetManager.Desktop.InstallConsoleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Agent Install Console" Height="480" Width="720"
+        WindowStartupLocation="CenterOwner"
+        Background="#0D1B2A" Foreground="#F8F5F1"
+        FontFamily="Consolas">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="HeaderText" FontSize="14" FontWeight="Bold" Foreground="#47C1A8" Margin="0,0,0,8"
+                   Text="Installing FleetManager Agent..." />
+
+        <ProgressBar x:Name="InstallProgress" Grid.Row="1" Height="6" Margin="0,0,0,8"
+                     Background="#111B24" BorderThickness="0" Foreground="#47C1A8"
+                     IsIndeterminate="True" />
+
+        <Border Grid.Row="2" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="6" Padding="8">
+            <ScrollViewer x:Name="LogScroller" VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="LogOutput" TextWrapping="Wrap" Foreground="#B9C4CD" FontSize="12" />
+            </ScrollViewer>
+        </Border>
+
+        <DockPanel Grid.Row="3" Margin="0,8,0,0">
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#8FA0AA" FontSize="11" Text="Working..." />
+            <Button x:Name="CloseBtn" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                    Content="Close" Width="90" Height="32" IsEnabled="False"
+                    Click="CloseBtn_Click"
+                    Background="#1A2A35" Foreground="#F8F5F1" BorderBrush="#2C3A43"
+                    FontWeight="Bold" Cursor="Hand">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="12,6">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </DockPanel>
+    </Grid>
+</Window>

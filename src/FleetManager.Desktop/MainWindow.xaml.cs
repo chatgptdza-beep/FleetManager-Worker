@@ -73,14 +73,20 @@ public partial class MainWindow : Window
         var editor = new VpsEditorWindow { Owner = this };
         if (editor.ShowDialog() == true)
         {
+            var console = new InstallConsoleWindow { Owner = this };
+            console.Show();
+
+            var progress = new Progress<string>(msg => console.AppendLog(msg));
+
             try
             {
-                Mouse.OverrideCursor = Cursors.Wait; // Show loading cursor for SSH operation
-                await RunUiActionAsync(() => _viewModel.CreateNodeAsync(editor.Request));
+                Mouse.OverrideCursor = Cursors.Wait;
+                await _viewModel.CreateNodeAsync(editor.Request, progress);
+                console.MarkSuccess();
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Auto-Installer Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                console.MarkFailed(ex.Message);
             }
             finally
             {

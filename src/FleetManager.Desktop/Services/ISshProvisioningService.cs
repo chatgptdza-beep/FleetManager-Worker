@@ -20,10 +20,10 @@ public interface ISshProvisioningService
     /// Executes the bootstrap command to download and install the worker agent on the VPS.
     /// Uses the provided backend API URL to configure the agent to point back to us.
     /// </summary>
-    Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, CancellationToken cancellationToken = default);
+    Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates the remote appsettings with the final node identity and restarts the worker service.
     /// </summary>
-    Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, CancellationToken cancellationToken = default);
+    Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default);
 }
