@@ -99,60 +99,78 @@ public sealed class AccountAutomationCoordinator(
 
     public async Task<ProxyRotationResult?> RotateProxyAsync(Guid accountId, string? reason, CancellationToken cancellationToken = default)
     {
-        await using var transaction = dbContext.Database.IsRelational()
-            ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            : null;
-
-        var account = await dbContext.Accounts
-            .Include(a => a.Proxies)
-            .Include(a => a.Alerts)
-            .Include(a => a.WorkflowStages)
-            .FirstOrDefaultAsync(a => a.Id == accountId, cancellationToken);
-        if (account is null)
+        const int maxRetries = 3;
+        for (var attempt = 0; attempt < maxRetries; attempt++)
         {
-            return null;
+            await using var transaction = dbContext.Database.IsRelational()
+                ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                : null;
+
+            var account = await dbContext.Accounts
+                .Include(a => a.Proxies)
+                .Include(a => a.Alerts)
+                .Include(a => a.WorkflowStages)
+                .FirstOrDefaultAsync(a => a.Id == accountId, cancellationToken);
+            if (account is null)
+            {
+                return null;
+            }
+
+            if (!account.Proxies.Any())
+            {
+                throw new InvalidOperationException("No proxies available for rotation.");
+            }
+
+            var oldIndex = account.CurrentProxyIndex;
+            account.CurrentProxyIndex = (account.CurrentProxyIndex + 1) % account.Proxies.Count;
+
+            dbContext.ProxyRotationLogs.Add(new ProxyRotationLog
+            {
+                AccountId = accountId,
+                FromOrder = oldIndex,
+                ToOrder = account.CurrentProxyIndex,
+                Reason = string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim(),
+                RotatedAtUtc = DateTime.UtcNow
+            });
+            AppendWorkflowStage(
+                account,
+                stageCode: "proxy_rotation",
+                stageName: "Proxy Rotation",
+                state: WorkflowStageState.Warning,
+                message: $"Proxy rotated from slot {oldIndex} to {account.CurrentProxyIndex}. Reason: {(string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim())}");
+
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                if (transaction is not null)
+                {
+                    await transaction.CommitAsync(cancellationToken);
+                }
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < maxRetries - 1)
+            {
+                // Another request rotated the proxy concurrently; reload and retry
+                foreach (var entry in dbContext.ChangeTracker.Entries())
+                {
+                    await entry.ReloadAsync(cancellationToken);
+                }
+                continue;
+            }
+
+            await workerInboxService.EnqueueProxyRotationAsync(
+                account,
+                oldIndex,
+                account.CurrentProxyIndex,
+                string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim(),
+                cancellationToken);
+
+            await hubContext.Clients.All.SendProxyRotatedEvent(accountId, account.CurrentProxyIndex);
+            await hubContext.Clients.All.SendBotStatusChanged(accountId, "Proxy Rotated");
+
+            return new ProxyRotationResult(account.CurrentProxyIndex);
         }
 
-        if (!account.Proxies.Any())
-        {
-            throw new InvalidOperationException("No proxies available for rotation.");
-        }
-
-        var oldIndex = account.CurrentProxyIndex;
-        account.CurrentProxyIndex = (account.CurrentProxyIndex + 1) % account.Proxies.Count;
-
-        dbContext.ProxyRotationLogs.Add(new ProxyRotationLog
-        {
-            AccountId = accountId,
-            FromOrder = oldIndex,
-            ToOrder = account.CurrentProxyIndex,
-            Reason = string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim(),
-            RotatedAtUtc = DateTime.UtcNow
-        });
-        AppendWorkflowStage(
-            account,
-            stageCode: "proxy_rotation",
-            stageName: "Proxy Rotation",
-            state: WorkflowStageState.Warning,
-            message: $"Proxy rotated from slot {oldIndex} to {account.CurrentProxyIndex}. Reason: {(string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim())}");
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-        }
-
-        await workerInboxService.EnqueueProxyRotationAsync(
-            account,
-            oldIndex,
-            account.CurrentProxyIndex,
-            string.IsNullOrWhiteSpace(reason) ? "Manual or 429 Error" : reason.Trim(),
-            cancellationToken);
-
-        await hubContext.Clients.All.SendProxyRotatedEvent(accountId, account.CurrentProxyIndex);
-        await hubContext.Clients.All.SendBotStatusChanged(accountId, "Proxy Rotated");
-
-        return new ProxyRotationResult(account.CurrentProxyIndex);
+        throw new InvalidOperationException("Failed to rotate proxy after multiple concurrency retries.");
     }
 
     public async Task<AccountSummaryResponse?> MarkManualRequiredAsync(Guid accountId, string? vncUrl, CancellationToken cancellationToken = default)

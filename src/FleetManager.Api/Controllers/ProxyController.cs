@@ -19,6 +19,11 @@ public sealed class ProxyController(
     [HttpPost("inject")]
     public async Task<IActionResult> InjectProxies(Guid id, [FromBody] InjectProxiesRequest request, CancellationToken cancellationToken)
     {
+        if (!ModelState.IsValid)
+        {
+            return ValidationProblem(ModelState);
+        }
+
         try
         {
             var result = await automationCoordinator.InjectProxiesAsync(id, request.RawProxies, request.ReplaceExisting, cancellationToken);
@@ -79,16 +84,24 @@ public sealed class ProxyController(
 
 public sealed class InjectProxiesRequest
 {
+    /// <summary>One proxy per line. Formats: ip:port or ip:port:user:password. Max 200 KB.</summary>
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MaxLength(200_000, ErrorMessage = "Proxy list must not exceed 200 KB.")]
     public string RawProxies { get; set; } = string.Empty;
+
     public bool ReplaceExisting { get; set; }
 }
 
 public sealed class RotateProxyRequest
 {
+    [System.ComponentModel.DataAnnotations.MaxLength(500, ErrorMessage = "Reason must not exceed 500 characters.")]
     public string Reason { get; set; } = string.Empty;
 }
 
 public sealed class TakeoverRequest
 {
+    [System.ComponentModel.DataAnnotations.Required]
+    [System.ComponentModel.DataAnnotations.MaxLength(2048, ErrorMessage = "VNC URL must not exceed 2048 characters.")]
+    [System.ComponentModel.DataAnnotations.Url(ErrorMessage = "VNC URL must be a valid URL.")]
     public string VncUrl { get; set; } = string.Empty;
 }

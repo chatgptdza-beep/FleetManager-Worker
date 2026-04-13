@@ -101,7 +101,15 @@ ensure_viewer_stack() {
   fi
 
   if ! pgrep -f "x11vnc .* -rfbport $FM_VNC_PORT" >/dev/null 2>&1; then
-    DISPLAY="$FM_DISPLAY" x11vnc -forever -shared -nopw -rfbport "$FM_VNC_PORT" >> "$SESSION_DIR/viewer.log" 2>&1 &
+    # Generate per-session VNC password if it does not exist
+    local vnc_secret_file="$SESSION_DIR/vnc.secret"
+    if [[ ! -f "$vnc_secret_file" ]]; then
+      head -c 6 /dev/urandom | base64 | tr -d '/+=' | head -c 8 > "$vnc_secret_file"
+      chmod 600 "$vnc_secret_file"
+    fi
+    local vnc_pw
+    vnc_pw="$(cat "$vnc_secret_file")"
+    DISPLAY="$FM_DISPLAY" x11vnc -forever -shared -passwd "$vnc_pw" -rfbport "$FM_VNC_PORT" >> "$SESSION_DIR/viewer.log" 2>&1 &
   fi
 
   local novnc_dir="${FM_NOVNC_DIR:-/usr/share/novnc}"

@@ -28,7 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.HasMany(x => x.Accounts)
                 .WithOne(x => x.VpsNode)
                 .HasForeignKey(x => x.VpsNodeId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<AgentInstallJob>(builder =>
@@ -65,6 +65,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.Property(x => x.CurrentStageCode).HasMaxLength(100).IsRequired();
             builder.Property(x => x.CurrentStageName).HasMaxLength(100).IsRequired();
             builder.Property(x => x.Status).HasConversion<string>();
+            builder.Property(x => x.CurrentProxyIndex).IsConcurrencyToken();
             builder.HasMany(x => x.WorkflowStages)
                 .WithOne(x => x.Account)
                 .HasForeignKey(x => x.AccountId);
@@ -124,11 +125,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             builder.HasOne(x => x.Account)
                 .WithMany()
                 .HasForeignKey(x => x.AccountId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
             builder.HasOne(x => x.VpsNode)
                 .WithMany()
                 .HasForeignKey(x => x.VpsNodeId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

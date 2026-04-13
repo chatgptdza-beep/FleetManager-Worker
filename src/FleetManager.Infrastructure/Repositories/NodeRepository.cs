@@ -23,6 +23,13 @@ public sealed class NodeRepository(AppDbContext dbContext) : INodeRepository
             .ThenInclude(x => x.Alerts)
             .FirstOrDefaultAsync(x => x.Id == nodeId, cancellationToken);
 
+    public async Task<VpsNode?> GetByIdReadOnlyAsync(Guid nodeId, CancellationToken cancellationToken = default)
+        => await dbContext.VpsNodes
+            .AsNoTracking()
+            .Include(x => x.Accounts)
+            .ThenInclude(x => x.Alerts)
+            .FirstOrDefaultAsync(x => x.Id == nodeId, cancellationToken);
+
     public async Task<NodeCommand?> GetCommandByIdAsync(Guid commandId, CancellationToken cancellationToken = default)
         => await dbContext.NodeCommands
             .Include(x => x.VpsNode)

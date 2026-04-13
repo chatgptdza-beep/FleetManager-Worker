@@ -10,22 +10,6 @@ namespace FleetManager.Infrastructure;
 
 public static class DependencyInjection
 {
-    private static readonly Guid[] DemoNodeIds =
-    {
-        Guid.Parse("3a5ff57d-e3d8-4d04-858e-fcef5b4997bf"),
-        Guid.Parse("df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437"),
-        Guid.Parse("70c8c145-a615-42eb-82bf-b93112f0fe12"),
-        Guid.Parse("2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf")
-    };
-
-    private static readonly Guid[] DemoAccountIds =
-    {
-        Guid.Parse("f58b7535-64fc-4569-bd57-c5eecc357f40"),
-        Guid.Parse("2bc0f75d-5df9-4fe9-96a0-67f8c4d8dc72"),
-        Guid.Parse("8eaa4352-f5a4-49de-9218-25a624cf96af"),
-        Guid.Parse("ab0cba77-63a0-4fef-bca0-738f08d2dc55")
-    };
-
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration, string? environmentName = null)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -56,84 +40,17 @@ public static class DependencyInjection
         return services;
     }
 
-    public static async Task SeedDemoDataAsync(this IServiceProvider services)
+    public static async Task MigrateAsync(this IServiceProvider services)
     {
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        await AppDbContextSeed.SeedAsync(dbContext);
-    }
-
-    public static async Task PurgeDemoDataAsync(this IServiceProvider services)
-    {
-        using var scope = services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
-        await dbContext.Database.EnsureCreatedAsync();
-
-        var nowUtc = DateTime.UtcNow;
-        var activeHeartbeatCutoffUtc = nowUtc.AddMinutes(-10);
-
-        var activeDemoNodeIds = await dbContext.VpsNodes
-            .Where(x => DemoNodeIds.Contains(x.Id)
-                && x.LastHeartbeatAtUtc.HasValue
-                && x.LastHeartbeatAtUtc.Value >= activeHeartbeatCutoffUtc)
-            .Select(x => x.Id)
-            .ToArrayAsync();
-
-        var staleDemoNodeIds = DemoNodeIds.Except(activeDemoNodeIds).ToArray();
-
-        var demoAccountIds = await dbContext.Accounts
-            .Where(a => DemoAccountIds.Contains(a.Id))
-            .Select(a => a.Id)
-            .ToArrayAsync();
-
-        if (demoAccountIds.Length > 0)
+        if (dbContext.Database.IsRelational())
         {
-            var workflowStages = dbContext.AccountWorkflowStages.Where(x => demoAccountIds.Contains(x.AccountId));
-            var alerts = dbContext.AccountAlerts.Where(x => demoAccountIds.Contains(x.AccountId));
-            var proxies = dbContext.ProxyEntries.Where(x => demoAccountIds.Contains(x.AccountId));
-            var rotationLogs = dbContext.ProxyRotationLogs.Where(x => demoAccountIds.Contains(x.AccountId));
-            var inboxEvents = dbContext.WorkerInboxEvents.Where(x => x.AccountId.HasValue && demoAccountIds.Contains(x.AccountId.Value));
-            var accounts = dbContext.Accounts.Where(x => demoAccountIds.Contains(x.Id));
-
-            dbContext.WorkerInboxEvents.RemoveRange(inboxEvents);
-            dbContext.ProxyRotationLogs.RemoveRange(rotationLogs);
-            dbContext.ProxyEntries.RemoveRange(proxies);
-            dbContext.AccountAlerts.RemoveRange(alerts);
-            dbContext.AccountWorkflowStages.RemoveRange(workflowStages);
-            dbContext.Accounts.RemoveRange(accounts);
+            await dbContext.Database.MigrateAsync();
         }
-
-        if (staleDemoNodeIds.Length > 0)
+        else
         {
-            var staleNodeAccountIds = await dbContext.Accounts
-                .Where(x => staleDemoNodeIds.Contains(x.VpsNodeId))
-                .Select(x => x.Id)
-                .ToArrayAsync();
-
-            if (staleNodeAccountIds.Length > 0)
-            {
-                dbContext.WorkerInboxEvents.RemoveRange(dbContext.WorkerInboxEvents.Where(x => x.AccountId.HasValue && staleNodeAccountIds.Contains(x.AccountId.Value)));
-                dbContext.ProxyRotationLogs.RemoveRange(dbContext.ProxyRotationLogs.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
-                dbContext.ProxyEntries.RemoveRange(dbContext.ProxyEntries.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
-                dbContext.AccountAlerts.RemoveRange(dbContext.AccountAlerts.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
-                dbContext.AccountWorkflowStages.RemoveRange(dbContext.AccountWorkflowStages.Where(x => staleNodeAccountIds.Contains(x.AccountId)));
-                dbContext.Accounts.RemoveRange(dbContext.Accounts.Where(x => staleNodeAccountIds.Contains(x.Id)));
-            }
+            await dbContext.Database.EnsureCreatedAsync();
         }
-
-        var capabilities = dbContext.NodeCapabilities.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
-        var commands = dbContext.NodeCommands.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
-        var installJobs = dbContext.AgentInstallJobs.Where(x => staleDemoNodeIds.Contains(x.VpsNodeId));
-        var nodeInboxEvents = dbContext.WorkerInboxEvents.Where(x => x.VpsNodeId.HasValue && staleDemoNodeIds.Contains(x.VpsNodeId.Value));
-        var nodes = dbContext.VpsNodes.Where(x => staleDemoNodeIds.Contains(x.Id));
-
-        dbContext.WorkerInboxEvents.RemoveRange(nodeInboxEvents);
-        dbContext.NodeCapabilities.RemoveRange(capabilities);
-        dbContext.NodeCommands.RemoveRange(commands);
-        dbContext.AgentInstallJobs.RemoveRange(installJobs);
-        dbContext.VpsNodes.RemoveRange(nodes);
-
-        await dbContext.SaveChangesAsync();
     }
 }

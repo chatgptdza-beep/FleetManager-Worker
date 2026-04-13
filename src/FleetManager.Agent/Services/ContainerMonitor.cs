@@ -95,9 +95,15 @@ public class ContainerMonitor : BackgroundService
 
     private async Task TriggerProxyRotationAsync(Guid accountId, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            _logger.LogError("Cannot rotate proxy for account {AccountId}: AgentOptions.ApiKey is not configured.", accountId);
+            return;
+        }
+
         var client = _httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(_settings.BackendBaseUrl);
-        client.DefaultRequestHeaders.Add("X-Api-Key", _settings.ApiKey ?? "MASTER-KEY-12345");
+        client.DefaultRequestHeaders.Add("X-Api-Key", _settings.ApiKey.Trim());
 
         var payload = new { Reason = "429 Rate Limit" };
         using var response = await client.PostAsJsonAsync($"/api/accounts/{accountId}/proxies/rotate", payload, cancellationToken);
@@ -109,9 +115,15 @@ public class ContainerMonitor : BackgroundService
 
     private async Task RequestManualTakeoverAsync(Guid accountId, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(_settings.ApiKey))
+        {
+            _logger.LogError("Cannot request manual takeover for account {AccountId}: AgentOptions.ApiKey is not configured.", accountId);
+            return;
+        }
+
         var client = _httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(_settings.BackendBaseUrl);
-        client.DefaultRequestHeaders.Add("X-Api-Key", _settings.ApiKey ?? "MASTER-KEY-12345");
+        client.DefaultRequestHeaders.Add("X-Api-Key", _settings.ApiKey.Trim());
 
         // Construct VNC URL pointing to backend
         string vncUrl = $"http://{_settings.NodeIpAddress}:{_settings.ControlPort}/vnc.html";

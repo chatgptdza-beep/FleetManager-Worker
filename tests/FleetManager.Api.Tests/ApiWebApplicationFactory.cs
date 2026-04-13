@@ -26,11 +26,12 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
         builder.UseSetting("Jwt:Key", "12345678901234567890123456789012");
         builder.UseSetting("AdminPassword", "Admin@FleetMgr2026!");
         builder.UseSetting("AgentApiKey", "TEST-AGENT-KEY");
+        builder.UseSetting("DisableRateLimiting", "true");
         builder.ConfigureAppConfiguration((_, configBuilder) =>
         {
             configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["SeedDemoData"] = "false",
+                ["DisableRateLimiting"] = "true",
                 ["ASPNETCORE_ENVIRONMENT"] = "Development",
                 ["ConnectionStrings:DefaultConnection"] = TestConnectionString,
                 ["Jwt:Key"] = "12345678901234567890123456789012",

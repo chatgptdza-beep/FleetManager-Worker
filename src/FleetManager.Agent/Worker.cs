@@ -18,7 +18,7 @@ public sealed class Worker(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
-        var client = httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient("AgentClient");
         client.BaseAddress = new Uri(settings.BackendBaseUrl);
         if (!string.IsNullOrWhiteSpace(settings.ApiKey))
         {
@@ -122,7 +122,25 @@ public sealed class Worker(
     private async Task<CommandExecutionResult> ExecuteCommandScriptAsync(AgentCommandEnvelopeResponse command, AgentOptions settings, CancellationToken cancellationToken)
     {
         var scriptsPath = Path.GetFullPath(settings.CommandScriptsPath);
-        var scriptPath = Path.Combine(scriptsPath, $"{command.CommandType}.sh");
+
+        // Guard against path traversal: command type must not contain path separators
+        if (command.CommandType.Contains('/') || command.CommandType.Contains('\\') || command.CommandType.Contains(".."))
+        {
+            logger.LogWarning("Rejected command with suspicious CommandType: {CommandType}", command.CommandType);
+            return CommandExecutionResult.Failure($"Invalid command type: '{command.CommandType}' contains illegal path characters.");
+        }
+
+        var scriptPath = Path.GetFullPath(Path.Combine(scriptsPath, $"{command.CommandType}.sh"));
+
+        // Ensure the resolved path is still inside the scripts directory
+        if (!scriptPath.StartsWith(scriptsPath + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            && !scriptPath.Equals(scriptsPath, StringComparison.Ordinal))
+        {
+            logger.LogWarning("Path traversal attempt detected. CommandType: {CommandType} resolved to {ScriptPath}",
+                command.CommandType, scriptPath);
+            return CommandExecutionResult.Failure($"Command '{command.CommandType}' resolved outside the scripts directory.");
+        }
+
         if (!File.Exists(scriptPath))
         {
             return CommandExecutionResult.Failure($"Script not found: {scriptPath}");
@@ -146,10 +164,27 @@ public sealed class Worker(
             }
         };
 
+        // Enforce a maximum execution time to prevent runaway scripts
+        var commandTimeout = TimeSpan.FromMinutes(settings.CommandTimeoutMinutes);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(commandTimeout);
+
         process.Start();
-        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
+
+        try
+        {
+            await process.WaitForExitAsync(timeoutCts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Timeout reached — kill the process
+            try { process.Kill(entireProcessTree: true); } catch { /* best-effort */ }
+            TryDeletePayloadFile(payloadPath, logger);
+            logger.LogWarning("Command {CommandType} timed out after {Timeout} minutes.", command.CommandType, settings.CommandTimeoutMinutes);
+            return CommandExecutionResult.Failure($"Command '{command.CommandType}' timed out after {settings.CommandTimeoutMinutes} minutes.");
+        }
 
         var stdout = await stdoutTask;
         var stderr = await stderrTask;

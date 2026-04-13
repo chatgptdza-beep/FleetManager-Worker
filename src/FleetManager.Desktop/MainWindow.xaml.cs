@@ -11,10 +11,11 @@ namespace FleetManager.Desktop;
 
 public partial class MainWindow : Window
 {
-    private readonly MainWindowViewModel _viewModel = new();
+    private readonly MainWindowViewModel _viewModel;
 
-    public MainWindow()
+    public MainWindow(MainWindowViewModel viewModel)
     {
+        _viewModel = viewModel;
         InitializeComponent();
         DataContext = _viewModel;
         Loaded += OnLoaded;

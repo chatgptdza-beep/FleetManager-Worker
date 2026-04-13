@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 using FleetManager.Api.Hubs;
 using FleetManager.Api.Services;
 using FleetManager.Application.Abstractions;
 using FleetManager.Contracts.Agent;
 using FleetManager.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 
@@ -16,7 +18,19 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
-builder.Services.AddHealthChecks();
+
+// Health checks: verify database connectivity
+var healthCheckConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (!string.IsNullOrWhiteSpace(healthCheckConnectionString))
+{
+    builder.Services.AddHealthChecks()
+        .AddNpgSql(healthCheckConnectionString, name: "database", tags: new[] { "db", "ready" });
+}
+else
+{
+    builder.Services.AddHealthChecks();
+}
+
 builder.Services.AddScoped<IAccountAutomationCoordinator, AccountAutomationCoordinator>();
 builder.Services.AddScoped<IWorkerInboxService, WorkerInboxService>();
 
@@ -46,6 +60,49 @@ var corsOrigins = builder.Configuration
     .Where(static origin => !string.IsNullOrWhiteSpace(origin))
     .ToArray()
     ?? Array.Empty<string>();
+
+// Rate limiting: protect API from brute force and DoS
+var disableRateLimiting = builder.Configuration.GetValue<bool>("DisableRateLimiting");
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    if (disableRateLimiting)
+    {
+        options.AddPolicy("api", _ => RateLimitPartition.GetNoLimiter(string.Empty));
+        options.AddPolicy("auth", _ => RateLimitPartition.GetNoLimiter(string.Empty));
+        options.AddPolicy("agent", _ => RateLimitPartition.GetNoLimiter(string.Empty));
+    }
+    else
+    {
+        // General API limit: 100 req/min per IP
+        options.AddFixedWindowLimiter("api", limiter =>
+        {
+            limiter.PermitLimit = 100;
+            limiter.Window = TimeSpan.FromMinutes(1);
+            limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            limiter.QueueLimit = 5;
+        });
+
+        // Stricter for auth endpoint to prevent password brute force
+        options.AddFixedWindowLimiter("auth", limiter =>
+        {
+            limiter.PermitLimit = 10;
+            limiter.Window = TimeSpan.FromMinutes(1);
+            limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            limiter.QueueLimit = 0;
+        });
+
+        // Agent heartbeat: higher limit for frequent polling
+        options.AddFixedWindowLimiter("agent", limiter =>
+        {
+            limiter.PermitLimit = 300;
+            limiter.Window = TimeSpan.FromMinutes(1);
+            limiter.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+            limiter.QueueLimit = 20;
+        });
+    }
+});
 
 builder.Services.AddAuthentication(options =>
 {
@@ -90,15 +147,7 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-var shouldSeedDemoData = builder.Configuration.GetValue<bool>("SeedDemoData");
-if (shouldSeedDemoData)
-{
-    await app.Services.SeedDemoDataAsync();
-}
-else
-{
-    await app.Services.PurgeDemoDataAsync();
-}
+await app.Services.MigrateAsync();
 
 if (app.Environment.IsDevelopment())
 {
@@ -111,6 +160,7 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 }
+app.UseRateLimiter();
 app.UseAuthentication();
 
 // Machine routes accept either a valid operator JWT or the agent API key.
@@ -143,8 +193,11 @@ app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
-    timeUtc = DateTime.UtcNow
+    timeUtc = DateTime.UtcNow,
+    version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0"
 })).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready").AllowAnonymous();
 
 app.MapPost("/api/auth/token", (AuthTokenRequest request) =>
 {
@@ -174,9 +227,10 @@ app.MapPost("/api/auth/token", (AuthTokenRequest request) =>
     var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
     var token = tokenHandler.CreateToken(tokenDescriptor);
     return Results.Ok(new { token = tokenHandler.WriteToken(token) });
-}).AllowAnonymous();
+}).AllowAnonymous()
+  .RequireRateLimiting("auth");
 
-app.MapControllers();
+app.MapControllers().RequireRateLimiting("api");
 app.MapHub<OperationsHub>("/hubs/operations");
 
 app.MapPost("/api/agent/heartbeat", async (
@@ -204,7 +258,7 @@ app.MapPost("/api/agent/heartbeat", async (
         node);
 
     return Results.Accepted();
-});
+}).RequireRateLimiting("agent");
 
 app.MapGet("/api/agent/nodes/{nodeId:guid}/commands/next", async (
     Guid nodeId,

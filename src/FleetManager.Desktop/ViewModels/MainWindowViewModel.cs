@@ -181,7 +181,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         ? "No worker events have been recorded yet."
         : "No pending worker events are waiting for the desktop.";
     public string AccountsGroupLabel => $"{NodeCount} groups";
-    public string SourceBanner => $"Source: {_dataService.CurrentModeLabel} | API: {_dataService.CurrentBaseUrl}";
+    public string SourceBanner => $"API: {_dataService.CurrentBaseUrl}";
     public string AccountsPanelTitle => "Accounts By VPS";
     public string SelectedNodeTableSummary => SelectedNode is null
         ? "Current view: select a VPS tab to inspect assigned accounts."
@@ -273,7 +273,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
             SelectedNode = ResolveSelectedNode(preferredNodeId);
             await LoadAccountsForSelectedNodeAsync(preferredAccountId);
-            StatusMessage = $"{_dataService.CurrentModeLabel} | {Nodes.Count} nodes, {TotalAccountCount} accounts | {_dataService.CurrentBaseUrl}";
+            StatusMessage = $"{Nodes.Count} nodes, {TotalAccountCount} accounts | {_dataService.CurrentBaseUrl}";
         }
         finally
         {

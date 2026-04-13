@@ -34,9 +34,13 @@ if [ -f "$CONFIG_FILE" ]; then
     cp "$CONFIG_FILE" /opt/fleetmanager-agent/appsettings.json
 fi
 
+# Create dedicated service user
+id -u fleetmgr >/dev/null 2>&1 || useradd --system --create-home --home-dir /home/fleetmgr --shell /usr/sbin/nologin fleetmgr
+
 # Set permissions
+chown -R fleetmgr:fleetmgr /opt/fleetmanager-agent /var/lib/fleetmanager
 chmod -R 755 /opt/fleetmanager-agent
-chmod 777 /var/lib/fleetmanager/sessions
+chmod 750 /var/lib/fleetmanager/sessions
 
 # 4. Create Systemd Service
 cat << 'EOF' > /etc/systemd/system/fleetmanager-agent.service
@@ -46,14 +50,16 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
-# We assume the dotnet binary is built here, or we use dotnet run in the src directory
+User=fleetmgr
+Group=fleetmgr
 WorkingDirectory=/opt/fleetmanager-agent
-ExecStart=/usr/bin/dotnet FleetManager.Worker.dll
+ExecStart=/usr/bin/dotnet FleetManager.Agent.dll
 Restart=always
 RestartSec=3
 Environment="DOTNET_PRINT_TELEMETRY_MESSAGE=false"
 Environment="ASPNETCORE_ENVIRONMENT=Production"
+TimeoutStopSec=30
+KillSignal=SIGTERM
 
 [Install]
 WantedBy=multi-user.target

@@ -17,7 +17,7 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
 
     public async Task<NodeSummaryResponse?> GetNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
     {
-        var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken);
+        var node = await nodeRepository.GetByIdReadOnlyAsync(nodeId, cancellationToken);
         return node is null ? null : Map(node);
     }
 
@@ -66,26 +66,7 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
             throw new InvalidOperationException("Unsupported command type.");
         }
 
-        var allowlistedCommands = new[]
-        {
-            NodeCommandType.StartBrowser,
-            NodeCommandType.StopBrowser,
-            NodeCommandType.RestartBrowserWorker,
-            NodeCommandType.OpenAssignedSession,
-            NodeCommandType.CloseAssignedSession,
-            NodeCommandType.BringManagedWindowToFront,
-            NodeCommandType.CaptureScreenshot,
-            NodeCommandType.FetchSessionLogs,
-            NodeCommandType.RestartAgentService,
-            NodeCommandType.ReloadApprovedConfig,
-            NodeCommandType.UpdateAgentPackage,
-            NodeCommandType.LoginWorkflow,
-            NodeCommandType.StartAutomation,
-            NodeCommandType.StopAutomation,
-            NodeCommandType.PauseAutomation
-        };
-
-        if (!allowlistedCommands.Contains(commandType))
+        if (!FleetManager.Contracts.CommandAllowlist.IsAllowed(commandType.ToString()))
         {
             throw new InvalidOperationException("Command is not in the allowlist.");
         }

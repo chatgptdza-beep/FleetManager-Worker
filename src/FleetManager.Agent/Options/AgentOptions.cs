@@ -13,7 +13,10 @@ public sealed class AgentOptions
     public string ConnectionState { get; set; } = "Connected";
     public int ConnectionTimeoutSeconds { get; set; } = 5;
     public string CommandScriptsPath { get; set; } = "/opt/fleetmanager-agent/commands";
+    public int CommandTimeoutMinutes { get; set; } = 5;
     
     public string ApiKey { get; set; } = string.Empty;
     public string NodeIpAddress { get; set; } = "127.0.0.1";
+    public string NodeName { get; set; } = string.Empty;
+    public bool EnableDockerMonitor { get; set; } = false;
 }
