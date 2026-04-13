@@ -13,6 +13,7 @@ public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
     private readonly Dictionary<Guid, InstallConsoleWindow> _installConsoles = new();
+    private readonly Dictionary<Guid, CancellationTokenSource> _installCancellations = new();
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -77,27 +78,36 @@ public partial class MainWindow : Window
             var console = new InstallConsoleWindow { Owner = this };
             console.Show();
 
-            var progress = new Progress<string>(msg => console.AppendLog(msg));
+            var cts = new CancellationTokenSource();
+            Guid? registeredNodeId = null;
+
+            // Sync callback so first messages display immediately
+            var trackingProgress = new Progress<string>(msg =>
+            {
+                console.AppendLog(msg);
+                // Capture node ID from the registration message
+                if (registeredNodeId == null && msg.StartsWith("Node registered:") && Guid.TryParse(msg.AsSpan("Node registered: ".Length), out var id))
+                {
+                    registeredNodeId = id;
+                    _installConsoles[id] = console;
+                    _installCancellations[id] = cts;
+                    console.Closed += (_, _) =>
+                    {
+                        _installConsoles.Remove(id);
+                        _installCancellations.Remove(id);
+                    };
+                }
+            });
 
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
-                // We need to peek the node ID after registration to track the console
-                Guid? registeredNodeId = null;
-                var trackingProgress = new Progress<string>(msg =>
-                {
-                    console.AppendLog(msg);
-                    // Capture node ID from the registration message
-                    if (registeredNodeId == null && msg.StartsWith("Node registered:") && Guid.TryParse(msg.AsSpan("Node registered: ".Length), out var id))
-                    {
-                        registeredNodeId = id;
-                        _installConsoles[id] = console;
-                        console.Closed += (_, _) => _installConsoles.Remove(id);
-                    }
-                });
-
-                await _viewModel.CreateNodeAsync(editor.Request, trackingProgress);
+                await _viewModel.CreateNodeAsync(editor.Request, trackingProgress, cts.Token);
                 console.MarkSuccess();
+            }
+            catch (OperationCanceledException)
+            {
+                console.MarkFailed("Installation was cancelled.");
             }
             catch (Exception ex)
             {
@@ -106,6 +116,11 @@ public partial class MainWindow : Window
             finally
             {
                 Mouse.OverrideCursor = null;
+                if (registeredNodeId.HasValue)
+                {
+                    _installCancellations.Remove(registeredNodeId.Value);
+                }
+                cts.Dispose();
             }
         }
     }
@@ -121,6 +136,52 @@ public partial class MainWindow : Window
                 console.Focus();
             }
         }
+    }
+
+    private void VpsContextOpenConsole_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem mi && mi.DataContext is NodeCardViewModel node)
+        {
+            if (_installConsoles.TryGetValue(node.NodeId, out var console))
+            {
+                console.Activate();
+                console.Focus();
+            }
+            else
+            {
+                MessageBox.Show(this, "No install console is active for this VPS.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+    }
+
+    private async void VpsContextDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem mi || mi.DataContext is not NodeCardViewModel node)
+            return;
+
+        var confirmed = MessageBox.Show(
+            this,
+            $"Delete VPS '{node.Name}'?\n\nThis will cancel any running installation and permanently remove this node.",
+            "FleetManager",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmed != MessageBoxResult.Yes)
+            return;
+
+        // Cancel any active install for this node
+        if (_installCancellations.TryGetValue(node.NodeId, out var cts))
+        {
+            cts.Cancel();
+            _installCancellations.Remove(node.NodeId);
+        }
+        if (_installConsoles.TryGetValue(node.NodeId, out var console))
+        {
+            console.MarkFailed("VPS deleted by user.");
+            _installConsoles.Remove(node.NodeId);
+        }
+
+        await RunUiActionAsync(() => _viewModel.DeleteNodeAsync(node.NodeId));
     }
 
     private async void AddAccount_Click(object sender, RoutedEventArgs e)

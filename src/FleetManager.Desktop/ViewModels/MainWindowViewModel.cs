@@ -494,17 +494,18 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Created {created.Email} | {SourceBanner}";
     }
 
-    public async Task CreateNodeAsync(CreateNodeRequest request, IProgress<string>? installProgress = null)
+    public async Task CreateNodeAsync(CreateNodeRequest request, IProgress<string>? installProgress = null, CancellationToken cancellationToken = default)
     {
         StatusMessage = "Testing SSH Connection...";
         installProgress?.Report("%05");
         installProgress?.Report("Testing SSH connection...");
-        if (!await _sshProvisioningService.TestConnectionAsync(request))
+        if (!await _sshProvisioningService.TestConnectionAsync(request, cancellationToken))
         {
             throw new InvalidOperationException("SSH Connection Failed. Verify credentials.");
         }
         installProgress?.Report("SSH connection OK.");
         installProgress?.Report("%10");
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Register node in API first so it appears in the UI immediately
         StatusMessage = "Registering node with API...";
@@ -514,29 +515,38 @@ public sealed class MainWindowViewModel : ViewModelBase
         StatusMessage = $"Node '{created.Name}' registered. Installing agent...";
         installProgress?.Report($"Node registered: {created.Id}");
         installProgress?.Report("%20");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Determine the API URL the remote agent should connect to.
+        // If the desktop is talking to localhost, the VPS obviously cannot reach that.
+        // Resolve via environment variable, or prompt the user to set one.
+        var agentApiUrl = ResolveAgentApiUrl(_dataService.CurrentBaseUrl, request.IpAddress);
 
         try
         {
             StatusMessage = "Checking if Agent is already running...";
             installProgress?.Report("Checking if agent is already running...");
-            bool agentRunning = await _sshProvisioningService.IsAgentRunningAsync(request);
+            bool agentRunning = await _sshProvisioningService.IsAgentRunningAsync(request, cancellationToken);
             installProgress?.Report("%25");
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!agentRunning)
             {
                 StatusMessage = "Installing FleetManager Agent...";
                 installProgress?.Report("Starting agent installation...");
-                await _sshProvisioningService.InstallAgentAsync(request, _dataService.CurrentBaseUrl, installProgress);
+                await _sshProvisioningService.InstallAgentAsync(request, agentApiUrl, installProgress, cancellationToken);
             }
             else
             {
                 installProgress?.Report("Agent already running — skipping install.");
             }
             installProgress?.Report("%80");
+            cancellationToken.ThrowIfCancellationRequested();
 
             StatusMessage = "Configuring agent appsettings and restarting worker...";
             installProgress?.Report("Configuring agent appsettings...");
-            await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, _dataService.CurrentBaseUrl, installProgress);
+            installProgress?.Report($"Agent API URL: {agentApiUrl}");
+            await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, agentApiUrl, installProgress, cancellationToken);
             installProgress?.Report("%95");
 
             await ReloadAsync(created.Id);
@@ -544,12 +554,52 @@ public sealed class MainWindowViewModel : ViewModelBase
             installProgress?.Report($"Done. Node '{created.Name}' is ready.");
             installProgress?.Report("%99");
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = $"Node '{created.Name}' install cancelled.";
+            installProgress?.Report("Installation cancelled by user.");
+            throw;
+        }
         catch (Exception ex)
         {
             StatusMessage = $"Node registered but agent install failed: {ex.Message}";
             installProgress?.Report($"ERROR: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Resolves the API URL the remote agent should use to connect back.
+    /// If the Desktop is connected to localhost, we look for FLEETMANAGER_PUBLIC_API_URL
+    /// or derive a URL from the API server's own binding.
+    /// </summary>
+    private static string ResolveAgentApiUrl(string desktopApiUrl, string vpsIp)
+    {
+        // If an override is explicitly set for the agent, always use it
+        var publicOverride = Environment.GetEnvironmentVariable("FLEETMANAGER_PUBLIC_API_URL");
+        if (!string.IsNullOrWhiteSpace(publicOverride))
+            return publicOverride.TrimEnd('/') + "/";
+
+        if (!Uri.TryCreate(desktopApiUrl, UriKind.Absolute, out var apiUri))
+            return desktopApiUrl;
+
+        // If the desktop is NOT talking to localhost, the agent can use the same URL
+        if (!string.Equals(apiUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(apiUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            return desktopApiUrl;
+        }
+
+        // Desktop is talking to localhost — the remote VPS can't reach that.
+        // Build a URL using the machine's public IP on the same port.
+        var machineIp = Environment.GetEnvironmentVariable("FLEETMANAGER_HOST_IP");
+        if (!string.IsNullOrWhiteSpace(machineIp))
+        {
+            return $"{apiUri.Scheme}://{machineIp.Trim()}:{apiUri.Port}/";
+        }
+
+        // Last resort: keep the original URL (will likely fail on the VPS)
+        return desktopApiUrl;
     }
 
     public async Task UpdateAccountAsync(Guid accountId, UpdateAccountRequest request)
