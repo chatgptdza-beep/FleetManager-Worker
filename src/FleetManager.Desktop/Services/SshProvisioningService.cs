@@ -74,11 +74,13 @@ public class SshProvisioningService : ISshProvisioningService
     {
         await Task.Run(() =>
         {
+            progress?.Report("%30");
             progress?.Report("[1/6] Resolving local agent package...");
             var packageDirectory = ResolveAgentPackageDirectory();
             var deployDirectory = ResolveLinuxDeployDirectory();
             var connectionInfo = CreateConnectionInfo(request);
 
+            progress?.Report("%35");
             progress?.Report("[2/6] Connecting via SSH + SFTP...");
             using var sshClient = new SshClient(connectionInfo);
             using var sftpClient = new SftpClient(connectionInfo);
@@ -89,13 +91,16 @@ public class SshProvisioningService : ISshProvisioningService
             EnsureRemoteDirectory(sftpClient, RemotePackageDir);
             EnsureRemoteDirectory(sftpClient, RemoteDeployDir);
 
+            progress?.Report("%40");
             progress?.Report("[3/6] Cleaning remote directories...");
             ExecuteChecked(sshClient, $"rm -rf {Quote(RemotePackageDir)}/* {Quote(RemoteDeployDir)}/*", TimeSpan.FromMinutes(1), progress);
 
+            progress?.Report("%45");
             progress?.Report("[4/6] Uploading agent package via SFTP...");
             UploadDirectory(sftpClient, packageDirectory, RemotePackageDir);
             UploadDirectory(sftpClient, deployDirectory, RemoteDeployDir);
             UploadTextFile(sftpClient, $"{RemotePackageDir}/{ChecksumManifestName}", BuildChecksumManifest(packageDirectory));
+            progress?.Report("%55");
             progress?.Report("[4/6] Upload complete.");
 
             progress?.Report("[5/6] Running install-worker-ubuntu.sh (this may take a few minutes)...");
@@ -103,6 +108,7 @@ public class SshProvisioningService : ISshProvisioningService
                 request,
                 $"bash {Quote($"{RemoteDeployDir}/install-worker-ubuntu.sh")} {Quote(RemotePackageDir)}");
             ExecuteChecked(sshClient, installCommand, TimeSpan.FromMinutes(10), progress);
+            progress?.Report("%75");
             progress?.Report("[5/6] Install script completed.");
 
             progress?.Report("[6/6] Disconnecting...");
@@ -116,6 +122,7 @@ public class SshProvisioningService : ISshProvisioningService
     {
         await Task.Run(() =>
         {
+            progress?.Report("%82");
             progress?.Report("Configuring agent appsettings...");
             var connectionInfo = CreateConnectionInfo(request);
             using var sshClient = new SshClient(connectionInfo);
@@ -143,6 +150,7 @@ public class SshProvisioningService : ISshProvisioningService
             }, new JsonSerializerOptions { WriteIndented = true });
 
             UploadTextFile(sftpClient, RemoteConfigPath, configJson);
+            progress?.Report("%88");
             progress?.Report("Deploying appsettings and restarting agent service...");
             var configureCommand = BuildElevatedCommand(
                 request,
@@ -151,6 +159,7 @@ public class SshProvisioningService : ISshProvisioningService
 
             sftpClient.Disconnect();
             sshClient.Disconnect();
+            progress?.Report("%93");
             progress?.Report("Agent configured and restarted successfully.");
         }, cancellationToken);
     }

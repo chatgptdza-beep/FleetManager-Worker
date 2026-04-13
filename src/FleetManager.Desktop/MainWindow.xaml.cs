@@ -12,6 +12,7 @@ namespace FleetManager.Desktop;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private readonly Dictionary<Guid, InstallConsoleWindow> _installConsoles = new();
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -81,7 +82,21 @@ public partial class MainWindow : Window
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
-                await _viewModel.CreateNodeAsync(editor.Request, progress);
+                // We need to peek the node ID after registration to track the console
+                Guid? registeredNodeId = null;
+                var trackingProgress = new Progress<string>(msg =>
+                {
+                    console.AppendLog(msg);
+                    // Capture node ID from the registration message
+                    if (registeredNodeId == null && msg.StartsWith("Node registered:") && Guid.TryParse(msg.AsSpan("Node registered: ".Length), out var id))
+                    {
+                        registeredNodeId = id;
+                        _installConsoles[id] = console;
+                        console.Closed += (_, _) => _installConsoles.Remove(id);
+                    }
+                });
+
+                await _viewModel.CreateNodeAsync(editor.Request, trackingProgress);
                 console.MarkSuccess();
             }
             catch (Exception ex)
@@ -91,6 +106,19 @@ public partial class MainWindow : Window
             finally
             {
                 Mouse.OverrideCursor = null;
+            }
+        }
+    }
+
+    private void VpsCard_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is NodeCardViewModel node)
+        {
+            // If there's an active install console for this node, bring it to front
+            if (_installConsoles.TryGetValue(node.NodeId, out var console))
+            {
+                console.Activate();
+                console.Focus();
             }
         }
     }
@@ -108,7 +136,7 @@ public partial class MainWindow : Window
                 NodeId = nodeId,
                 Email = editor.Email,
                 Username = editor.Username,
-                Status = "Stopped"
+                Status = "Stable"
             }));
         }
     }

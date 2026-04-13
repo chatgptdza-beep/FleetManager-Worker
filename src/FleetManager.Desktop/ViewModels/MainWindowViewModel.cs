@@ -497,12 +497,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     public async Task CreateNodeAsync(CreateNodeRequest request, IProgress<string>? installProgress = null)
     {
         StatusMessage = "Testing SSH Connection...";
+        installProgress?.Report("%05");
         installProgress?.Report("Testing SSH connection...");
         if (!await _sshProvisioningService.TestConnectionAsync(request))
         {
             throw new InvalidOperationException("SSH Connection Failed. Verify credentials.");
         }
         installProgress?.Report("SSH connection OK.");
+        installProgress?.Report("%10");
 
         // Register node in API first so it appears in the UI immediately
         StatusMessage = "Registering node with API...";
@@ -511,12 +513,14 @@ public sealed class MainWindowViewModel : ViewModelBase
         await ReloadAsync(created.Id);
         StatusMessage = $"Node '{created.Name}' registered. Installing agent...";
         installProgress?.Report($"Node registered: {created.Id}");
+        installProgress?.Report("%20");
 
         try
         {
             StatusMessage = "Checking if Agent is already running...";
             installProgress?.Report("Checking if agent is already running...");
             bool agentRunning = await _sshProvisioningService.IsAgentRunningAsync(request);
+            installProgress?.Report("%25");
 
             if (!agentRunning)
             {
@@ -528,14 +532,17 @@ public sealed class MainWindowViewModel : ViewModelBase
             {
                 installProgress?.Report("Agent already running — skipping install.");
             }
+            installProgress?.Report("%80");
 
             StatusMessage = "Configuring agent appsettings and restarting worker...";
             installProgress?.Report("Configuring agent appsettings...");
             await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, _dataService.CurrentBaseUrl, installProgress);
+            installProgress?.Report("%95");
 
             await ReloadAsync(created.Id);
             StatusMessage = $"Added {created.Name} | NodeId: {created.Id} | Auto-Installer {(agentRunning ? "Skipped" : "Success")} | {SourceBanner}";
             installProgress?.Report($"Done. Node '{created.Name}' is ready.");
+            installProgress?.Report("%99");
         }
         catch (Exception ex)
         {

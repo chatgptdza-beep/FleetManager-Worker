@@ -19,6 +19,14 @@ public partial class InstallConsoleWindow : Window
             return;
         }
 
+        // Messages starting with %XX are percentage updates
+        if (message.Length >= 3 && message[0] == '%' && int.TryParse(message.AsSpan(1, 2), out var pct))
+        {
+            InstallProgress.Value = pct;
+            HeaderText.Text = $"Installing FleetManager Agent... {pct}%";
+            return;
+        }
+
         LogOutput.Text += message + Environment.NewLine;
         LogScroller.ScrollToEnd();
     }
