@@ -36,13 +36,13 @@ namespace FleetManager.Infrastructure.Migrations
                         column: x => x.AccountId,
                         principalTable: "Accounts",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_WorkerInboxEvents_VpsNodes_VpsNodeId",
                         column: x => x.VpsNodeId,
                         principalTable: "VpsNodes",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateIndex(

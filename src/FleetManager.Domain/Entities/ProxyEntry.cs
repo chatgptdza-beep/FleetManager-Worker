@@ -20,6 +20,6 @@ public sealed class ProxyEntry : BaseEntity
 
     public override string ToString()
     {
-        return $"{Host}:{Port}:{Username}:{Password}";
+        return $"Proxy({Host}:{Port})";
     }
 }

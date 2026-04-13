@@ -22,7 +22,9 @@ public static class CommandAllowlist
         "LoginWorkflow",
         "StartAutomation",
         "StopAutomation",
-        "PauseAutomation"
+        "PauseAutomation",
+        "RefreshProxyPool",
+        "TakeoverComplete"
     };
 
     public static bool IsAllowed(string commandName) => Allowed.Contains(commandName);

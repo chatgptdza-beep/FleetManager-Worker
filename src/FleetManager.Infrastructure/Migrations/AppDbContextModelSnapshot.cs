@@ -604,12 +604,12 @@ namespace FleetManager.Infrastructure.Migrations
                     b.HasOne("FleetManager.Domain.Entities.Account", "Account")
                         .WithMany()
                         .HasForeignKey("AccountId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("FleetManager.Domain.Entities.VpsNode", "VpsNode")
                         .WithMany()
                         .HasForeignKey("VpsNodeId")
-                        .OnDelete(DeleteBehavior.Cascade);
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Account");
 
