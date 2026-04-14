@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -181,7 +182,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         ? "No worker events have been recorded yet."
         : "No pending worker events are waiting for the desktop.";
     public string AccountsGroupLabel => $"{NodeCount} groups";
-    public string SourceBanner => $"API: {_dataService.CurrentBaseUrl}";
+    public string SourceBanner => _dataService.HasConfiguredBaseUrl
+        ? $"API: {_dataService.CurrentBaseUrl}"
+        : "API: not configured";
     public string AccountsPanelTitle => "Accounts By VPS";
     public string SelectedNodeTableSummary => SelectedNode is null
         ? "Current view: select a VPS tab to inspect assigned accounts."
@@ -194,7 +197,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string SelectedNodeRuntimeLabel => SelectedNode is null
         ? "Worker runtime not available."
         : $"Agent {SelectedNode.AgentVersionLabel} | Control {SelectedNode.ControlPort} | {SelectedNode.HeartbeatLabel}";
-    public string SelectedNodeInstallCommand => SelectedNode is null
+    public string SelectedNodeInstallCommand => SelectedNode is null || !_dataService.HasConfiguredBaseUrl
         ? string.Empty
         : BuildInstallCommand(SelectedNode, _dataService.CurrentBaseUrl);
     public string SelectedNodeWorkerConfigJson
@@ -241,16 +244,21 @@ public sealed class MainWindowViewModel : ViewModelBase
             : $"Single target: {SelectedAccount.Email}";
 
     private readonly ISshProvisioningService _sshProvisioningService;
+    private readonly IDesktopNodeRegistry _nodeRegistry;
 
     public MainWindowViewModel()
-        : this(new DashboardDataService(), new SshProvisioningService())
+        : this(new DashboardDataService(), new SshProvisioningService(), new DesktopNodeRegistry())
     {
     }
 
-    public MainWindowViewModel(IDashboardDataService dataService, ISshProvisioningService sshProvisioningService)
+    public MainWindowViewModel(
+        IDashboardDataService dataService,
+        ISshProvisioningService sshProvisioningService,
+        IDesktopNodeRegistry nodeRegistry)
     {
         _dataService = dataService;
         _sshProvisioningService = sshProvisioningService;
+        _nodeRegistry = nodeRegistry;
     }
 
     /// <summary>Exposes the data service for use in code-behind (e.g. RemoteTakeoverWindow).</summary>
@@ -258,12 +266,32 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task InitializeAsync()
     {
+        await RestoreDesktopRuntimeStateAsync();
+        if (!_dataService.HasConfiguredBaseUrl)
+        {
+            SignalRStatusLabel = "Not configured";
+            ResetDashboardCollections();
+            StatusMessage = "No real API server configured yet. Add a VPS with a real server address.";
+            NotifyDashboardPropertiesChanged();
+            return;
+        }
+
         await ReloadAsync();
         await TryConnectSignalRAsync();
+        await PersistDesktopRuntimeStateAsync();
     }
 
     public async Task ReloadAsync(Guid? preferredNodeId = null, Guid? preferredAccountId = null)
     {
+        if (!_dataService.HasConfiguredBaseUrl)
+        {
+            ResetDashboardCollections();
+            SignalRStatusLabel = "Not configured";
+            StatusMessage = "No real API server configured yet. Add a VPS with a real server address.";
+            NotifyDashboardPropertiesChanged();
+            return;
+        }
+
         _isInitializing = true;
         try
         {
@@ -284,6 +312,12 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task TryConnectSignalRAsync()
     {
+        if (!_dataService.HasConfiguredBaseUrl)
+        {
+            SignalRStatusLabel = "Not configured";
+            return;
+        }
+
         try
         {
             var token = _dataService.BearerToken;
@@ -452,6 +486,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         var deleted = await _dataService.DeleteNodeAsync(nodeId);
         if (deleted)
         {
+            await _nodeRegistry.RemoveByRemoteNodeIdAsync(nodeId);
             await ReloadAsync();
             StatusMessage = "VPS node deleted successfully";
         }
@@ -496,6 +531,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task CreateNodeAsync(CreateNodeRequest request, IProgress<string>? installProgress = null, CancellationToken cancellationToken = default)
     {
+        request.SshUsername = "root";
         StatusMessage = "Testing SSH Connection...";
         installProgress?.Report("%05");
         installProgress?.Report("Testing SSH connection...");
@@ -507,10 +543,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         installProgress?.Report("%10");
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (!_dataService.HasConfiguredBaseUrl)
+        {
+            installProgress?.Report("No API configured yet. Preparing the entered VPS as the primary API server...");
+            await EnsurePrimaryApiOnEnteredNodeAsync(request, installProgress, cancellationToken);
+        }
+
         // Register node in API first so it appears in the UI immediately
         StatusMessage = "Registering node with API...";
         installProgress?.Report("Registering node with API...");
-        var created = await _dataService.CreateNodeAsync(request);
+        var created = await CreateNodeWithApiAutoRecoveryAsync(request, installProgress, cancellationToken);
+        await _nodeRegistry.UpsertProvisionedNodeAsync(
+            request,
+            created,
+            _dataService.HasConfiguredBaseUrl ? _dataService.CurrentBaseUrl : null,
+            cancellationToken);
         await ReloadAsync(created.Id);
         StatusMessage = $"Node '{created.Name}' registered. Installing agent...";
         installProgress?.Report($"Node registered: {created.Id}");
@@ -574,6 +621,195 @@ public sealed class MainWindowViewModel : ViewModelBase
             StatusMessage = $"Node registered but agent install failed: {ex.Message}";
             installProgress?.Report($"ERROR: {ex.Message}");
             throw;
+        }
+    }
+
+    private async Task<NodeSummaryResponse> CreateNodeWithApiAutoRecoveryAsync(
+        CreateNodeRequest request,
+        IProgress<string>? installProgress,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _dataService.CreateNodeAsync(request, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            if (!ShouldTryNodeApiFallback(request.IpAddress))
+            {
+                throw;
+            }
+
+            installProgress?.Report("API registration failed on localhost. Trying VPS API endpoint automatically...");
+
+            if (!await TrySwitchDesktopApiToNodeApiAsync(request, installProgress, cancellationToken))
+            {
+                throw new InvalidOperationException(
+                    "Node registration failed and automatic switch to VPS API endpoint did not succeed.", ex);
+            }
+
+            installProgress?.Report("Retrying node registration with VPS API endpoint...");
+            return await _dataService.CreateNodeAsync(request, cancellationToken);
+        }
+    }
+
+    private bool ShouldTryNodeApiFallback(string vpsIp)
+    {
+        if (string.IsNullOrWhiteSpace(vpsIp))
+        {
+            return false;
+        }
+
+        if (!Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var apiUri))
+        {
+            return false;
+        }
+
+        return string.Equals(apiUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(apiUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> TrySwitchDesktopApiToNodeApiAsync(
+        CreateNodeRequest request,
+        IProgress<string>? installProgress,
+        CancellationToken cancellationToken)
+    {
+        if (!Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var currentApiUri))
+        {
+            return false;
+        }
+
+        var candidatePort = currentApiUri.IsDefaultPort ? 5000 : currentApiUri.Port;
+        var candidateApiBase = $"{currentApiUri.Scheme}://{request.IpAddress.Trim()}:{candidatePort}/";
+        var previousApiBase = _dataService.CurrentBaseUrl;
+
+        if (string.Equals(candidateApiBase, previousApiBase, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        _dataService.ConfigureBaseUrl(candidateApiBase);
+        installProgress?.Report($"Switched desktop API to {candidateApiBase}");
+
+        try
+        {
+            await _dataService.GetNodesAsync(cancellationToken);
+            await PersistDesktopRuntimeStateAsync();
+            StatusMessage = $"API switched automatically to {candidateApiBase}";
+            return true;
+        }
+        catch (Exception switchEx)
+        {
+            _dataService.ConfigureBaseUrl(previousApiBase);
+            await PersistDesktopRuntimeStateAsync();
+            installProgress?.Report($"Auto-switch failed: {switchEx.Message}");
+            return false;
+        }
+    }
+
+    private async Task EnsurePrimaryApiOnEnteredNodeAsync(
+        CreateNodeRequest request,
+        IProgress<string>? installProgress,
+        CancellationToken cancellationToken)
+    {
+        if (!TryBuildRemoteApiBaseUrl(request.IpAddress, 5000, out var candidateApiBase))
+        {
+            throw new InvalidOperationException("The entered VPS address is not a valid remote API host.");
+        }
+
+        installProgress?.Report($"Primary API candidate: {candidateApiBase}");
+        var initialProbe = await ProbeApiEndpointAsync(candidateApiBase, cancellationToken);
+        if (initialProbe.IsReachable)
+        {
+            installProgress?.Report("Primary API health probe succeeded.");
+            if (await TryUsePrimaryApiAsync(candidateApiBase, installProgress, cancellationToken))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"FleetManager.Api is reachable on {candidateApiBase} but desktop authentication failed. " +
+                "Check FLEETMANAGER_API_PASSWORD/AdminPassword and retry.");
+        }
+
+        installProgress?.Report($"Primary API probe failed: {initialProbe.Detail}");
+        installProgress?.Report("FleetManager.Api is not reachable yet. Deploying it automatically on the entered VPS...");
+        StatusMessage = "Deploying FleetManager.Api to the VPS...";
+        await _sshProvisioningService.InstallApiAsync(request, installProgress, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        installProgress?.Report("Remote API deployment finished. Probing it from this desktop...");
+        var deployedProbe = await ProbeApiEndpointAsync(candidateApiBase, cancellationToken);
+        if (!deployedProbe.IsReachable)
+        {
+            throw new InvalidOperationException(
+                $"FleetManager.Api was installed on {candidateApiBase} but this desktop still cannot reach it. " +
+                "Open TCP 5000 on the VPS/provider firewall and retry.");
+        }
+
+        installProgress?.Report("Primary API health probe succeeded after deployment.");
+        if (await TryUsePrimaryApiAsync(candidateApiBase, installProgress, cancellationToken))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"FleetManager.Api is reachable on {candidateApiBase} but desktop authentication still failed. " +
+            "Check FLEETMANAGER_API_PASSWORD/AdminPassword and retry.");
+    }
+
+    private async Task<bool> TryUsePrimaryApiAsync(
+        string candidateApiBase,
+        IProgress<string>? installProgress,
+        CancellationToken cancellationToken)
+    {
+        _dataService.ConfigureBaseUrl(candidateApiBase);
+
+        try
+        {
+            await _dataService.GetNodesAsync(cancellationToken);
+            await PersistDesktopRuntimeStateAsync();
+            StatusMessage = $"Primary API set to {candidateApiBase}";
+            return true;
+        }
+        catch (Exception apiEx)
+        {
+            _dataService.ClearBaseUrl();
+            await PersistDesktopRuntimeStateAsync();
+            installProgress?.Report($"Primary API auth failed: {apiEx.Message}");
+            return false;
+        }
+    }
+
+    private static async Task<ApiEndpointProbeResult> ProbeApiEndpointAsync(
+        string apiBaseUrl,
+        CancellationToken cancellationToken)
+    {
+        using var client = new HttpClient
+        {
+            BaseAddress = new Uri(apiBaseUrl, UriKind.Absolute),
+            Timeout = TimeSpan.FromSeconds(8)
+        };
+
+        try
+        {
+            using var response = await client.GetAsync("health", cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                return new ApiEndpointProbeResult(true, "OK");
+            }
+
+            return new ApiEndpointProbeResult(
+                false,
+                $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new ApiEndpointProbeResult(false, ex.Message);
         }
     }
 
@@ -837,15 +1073,11 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public async Task SaveDesktopConfigAsync(string path)
     {
-        var snapshot = new DesktopConfigSnapshot
-        {
-            ApiBaseUrl = _dataService.CurrentBaseUrl,
-            SelectedNodeId = SelectedNode?.NodeId,
-            SearchText = SearchText
-        };
+        var snapshot = CreateDesktopConfigSnapshot();
 
         var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(path, json);
+        await DesktopRuntimeStateStore.SaveAsync(snapshot);
         StatusMessage = $"Saved desktop config to {Path.GetFileName(path)} | {SourceBanner}";
     }
 
@@ -857,9 +1089,47 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         _dataService.ConfigureBaseUrl(snapshot.ApiBaseUrl);
         SearchText = snapshot.SearchText ?? string.Empty;
+        await DesktopRuntimeStateStore.SaveAsync(snapshot);
         await ReloadAsync(snapshot.SelectedNodeId);
         StatusMessage = $"Loaded desktop config from {Path.GetFileName(path)} | {SourceBanner}";
     }
+
+    private DesktopConfigSnapshot CreateDesktopConfigSnapshot()
+        => new()
+        {
+            ApiBaseUrl = _dataService.CurrentBaseUrl,
+            SelectedNodeId = SelectedNode?.NodeId,
+            SearchText = SearchText
+        };
+
+    private async Task RestoreDesktopRuntimeStateAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL")))
+        {
+            return;
+        }
+
+        var snapshot = await DesktopRuntimeStateStore.TryLoadAsync();
+        if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.ApiBaseUrl))
+        {
+            return;
+        }
+
+        try
+        {
+            _dataService.ConfigureBaseUrl(snapshot.ApiBaseUrl);
+            SearchText = snapshot.SearchText ?? string.Empty;
+        }
+        catch
+        {
+            _dataService.ClearBaseUrl();
+            SearchText = snapshot.SearchText ?? string.Empty;
+            await DesktopRuntimeStateStore.SaveAsync(CreateDesktopConfigSnapshot());
+        }
+    }
+
+    private Task PersistDesktopRuntimeStateAsync()
+        => DesktopRuntimeStateStore.SaveAsync(CreateDesktopConfigSnapshot());
 
     public async Task ExportVisibleAccountsCsvAsync(string path)
     {
@@ -1035,6 +1305,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private async Task LoadNodesAsync()
     {
         var nodes = await _dataService.GetNodesAsync();
+        await _nodeRegistry.SyncRemoteNodesAsync(nodes, _dataService.CurrentBaseUrl);
         Nodes.Clear();
         foreach (var node in nodes.OrderBy(node => node.Name).Select(NodeCardViewModel.FromContract))
         {
@@ -1047,6 +1318,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private async Task LoadAllAccountsAsync()
     {
         var accounts = await _dataService.GetAccountsAsync();
+        await _nodeRegistry.SyncTaskDataAsync(accounts);
         _allAccounts.Clear();
         _allAccounts.AddRange(accounts.Select(AccountCardViewModel.FromSummary).OrderBy(account => account.Email));
         RestorePendingWorkerSessions(_allAccounts);
@@ -1311,7 +1583,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         private set => SetProperty(ref _signalRStatus, value);
     }
 
-    public string ApiBaseUrlLabel => _dataService.CurrentBaseUrl;
+    public string ApiBaseUrlLabel => _dataService.HasConfiguredBaseUrl ? _dataService.CurrentBaseUrl : "Not configured";
     public string DataSourceModeLabel => _dataService.CurrentModeLabel;
 
     public string? GetFocusedViewerUrl()
@@ -1587,7 +1859,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             Agent = new
             {
                 NodeId = node.NodeId,
-                BackendBaseUrl = _dataService.CurrentBaseUrl,
+                BackendBaseUrl = _dataService.HasConfiguredBaseUrl ? _dataService.CurrentBaseUrl : "<set-real-api-url>",
                 AgentVersion = string.IsNullOrWhiteSpace(node.AgentVersion) ? "1.0.0" : node.AgentVersion,
                 HeartbeatIntervalSeconds = 15,
                 CommandPollIntervalSeconds = 3,
@@ -1605,16 +1877,108 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private static string BuildInstallCommand(NodeCardViewModel node, string apiBaseUrl)
     {
+        var bundleUrl = ResolveInstallBundleUrl();
         var sshTarget = $"{node.SshUsername}@{node.IpAddress}";
         return
-            $"scp -r out/agent {sshTarget}:/tmp/fleetmanager-agent\n" +
-            $"scp -r deploy/linux {sshTarget}:/tmp/fleetmanager-deploy\n" +
-            $"ssh {sshTarget} \"sudo bash /tmp/fleetmanager-deploy/install-worker-ubuntu.sh /tmp/fleetmanager-agent\"\n" +
-            $"bash deploy/linux/register-node.sh --api {ShellEscapeSingleQuoted(apiBaseUrl.Trim())} --admin-password '<set-api-password>' --name {ShellEscapeSingleQuoted(node.Name)} --ip {ShellEscapeSingleQuoted(node.IpAddress)} --ssh-user {ShellEscapeSingleQuoted(node.SshUsername)} --os {ShellEscapeSingleQuoted(node.OsType)} --region {ShellEscapeSingleQuoted(string.IsNullOrWhiteSpace(node.Region) ? "local" : node.Region)}";
+            $"ssh {sshTarget} \"sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip && " +
+            $"curl -fsSL {ShellEscapeSingleQuoted(bundleUrl)} -o /tmp/fleetmanager-agent-bundle.zip && " +
+            "rm -rf /tmp/fleetmanager-bundle && mkdir -p /tmp/fleetmanager-bundle && " +
+            "unzip -oq /tmp/fleetmanager-agent-bundle.zip -d /tmp/fleetmanager-bundle && " +
+            "sudo bash /tmp/fleetmanager-bundle/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-bundle/agent && " +
+            $"bash /tmp/fleetmanager-bundle/deploy/linux/register-node.sh --api {ShellEscapeSingleQuoted(apiBaseUrl.Trim())} --admin-password '<set-api-password>' --name {ShellEscapeSingleQuoted(node.Name)} --ip {ShellEscapeSingleQuoted(node.IpAddress)} --ssh-user {ShellEscapeSingleQuoted(node.SshUsername)} --os {ShellEscapeSingleQuoted(node.OsType)} --region {ShellEscapeSingleQuoted(string.IsNullOrWhiteSpace(node.Region) ? "local" : node.Region)}\"";
+    }
+
+    private void ResetDashboardCollections()
+    {
+        Nodes.Clear();
+        Accounts.Clear();
+        ManualQueueAccounts.Clear();
+        WorkerInboxEvents.Clear();
+        _allAccounts.Clear();
+        _selectedNodeAccounts.Clear();
+        SelectedNode = null;
+        SelectedAccount = null;
+        FocusedAccount = null;
+        UpdatePendingWorkerEventCount();
+    }
+
+    private static bool TryBuildRemoteApiBaseUrl(string host, int port, out string apiBaseUrl)
+    {
+        apiBaseUrl = string.Empty;
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return false;
+        }
+
+        var normalizedHost = host.Trim();
+        if (string.Equals(normalizedHost, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalizedHost, "0.0.0.0", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (IPAddress.TryParse(normalizedHost, out var ipAddress) && IPAddress.IsLoopback(ipAddress))
+        {
+            return false;
+        }
+
+        if (Uri.CheckHostName(normalizedHost) == UriHostNameType.Unknown)
+        {
+            return false;
+        }
+
+        apiBaseUrl = $"http://{normalizedHost}:{port}/";
+        return true;
+    }
+
+    private static string ResolveInstallBundleUrl()
+    {
+        var explicitUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_BUNDLE_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        var repoUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_URL")
+            ?? "https://github.com/chatgptdza-beep/FleetManager-Worker.git";
+        var branch = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_BRANCH") ?? "main";
+        if (TryBuildGitHubRawUrl(repoUrl, branch, "deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip", out var bundleUrl))
+        {
+            return bundleUrl;
+        }
+
+        return "<set-FLEETMANAGER_AGENT_BUNDLE_URL>";
+    }
+
+    private static bool TryBuildGitHubRawUrl(string repoUrl, string branch, string relativePath, out string bundleUrl)
+    {
+        bundleUrl = string.Empty;
+        if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var repoUri)
+            || !string.Equals(repoUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var segments = repoUri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length < 2)
+        {
+            return false;
+        }
+
+        var owner = segments[0];
+        var repo = segments[1];
+        if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            repo = repo[..^4];
+        }
+
+        bundleUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{branch.Trim('/')}/{relativePath.TrimStart('/')}";
+        return true;
     }
 
     private static string ShellEscapeSingleQuoted(string value)
         => $"'{value.Replace("'", "'\"'\"'")}'";
 
+    private sealed record ApiEndpointProbeResult(bool IsReachable, string Detail);
     private sealed record ViewerSessionInfo(string? Url, string Message);
 }

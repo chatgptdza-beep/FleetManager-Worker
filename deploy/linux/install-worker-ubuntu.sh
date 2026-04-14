@@ -13,16 +13,85 @@ SERVICE_PATH="/etc/systemd/system/fleetmanager-agent.service"
 RUNNER_PATH="$INSTALL_DIR/run-agent.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
+wait_for_apt_locks() {
+  local waited=0
+  while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock >/dev/null 2>&1; do
+    echo "apt/dpkg is busy. Waiting for lock release..."
+    sleep 5
+    waited=$((waited + 5))
+    if [[ "$waited" -ge 300 ]]; then
+      echo "Timed out waiting for apt/dpkg lock release." >&2
+      return 1
+    fi
+  done
+}
+
+retry_apt() {
+  local retries=0
+  while true; do
+    wait_for_apt_locks || return 1
+    if "$@"; then
+      return 0
+    fi
+
+    if fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock >/dev/null 2>&1; then
+      retries=$((retries + 1))
+      echo "apt/dpkg became busy again. Retrying..."
+      sleep 5
+      if [[ "$retries" -ge 60 ]]; then
+        echo "Timed out retrying apt command while lock is held." >&2
+        return 1
+      fi
+      continue
+    fi
+
+    return 1
+  done
+}
+
+package_is_self_contained() {
+  [[ -f "$PACKAGE_DIR/FleetManager.Agent" && -f "$PACKAGE_DIR/libhostfxr.so" ]]
+}
+
+ensure_dotnet_runtime() {
+  local need_runtime=1
+  if package_is_self_contained; then
+    return 0
+  fi
+
+  if command -v dotnet >/dev/null 2>&1; then
+    if dotnet --list-runtimes 2>/dev/null | grep -q '^Microsoft.NETCore.App 8\.'; then
+      need_runtime=0
+    fi
+  fi
+
+  if [[ "$need_runtime" -eq 0 ]]; then
+    return 0
+  fi
+
+  retry_apt env DEBIAN_FRONTEND=noninteractive apt-get install -y dotnet-runtime-8.0 aspnetcore-runtime-8.0 && return 0
+
+  # If Ubuntu repos do not provide dotnet packages, bootstrap Microsoft feed and retry.
+  local ms_pkg="/tmp/packages-microsoft-prod.deb"
+  curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o "$ms_pkg"
+  dpkg -i "$ms_pkg"
+  rm -f "$ms_pkg"
+  retry_apt apt-get update
+  retry_apt env DEBIAN_FRONTEND=noninteractive apt-get install -y dotnet-runtime-8.0 aspnetcore-runtime-8.0
+}
+
+retry_apt apt-get update
+retry_apt env DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates curl python3 procps xz-utils \
   xvfb x11vnc fluxbox novnc websockify xdg-utils \
   libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
   libasound2t64 || true
 
 if ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || true
+  retry_apt env DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || retry_apt env DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || true
 fi
+
+ensure_dotnet_runtime
 
 id -u fleetmgr >/dev/null 2>&1 || useradd --system --create-home --home-dir /home/fleetmgr --shell /usr/sbin/nologin fleetmgr
 

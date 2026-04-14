@@ -1,6 +1,8 @@
 using FleetManager.Contracts.Accounts;
+using FleetManager.Desktop.Services;
 using FleetManager.Desktop.ViewModels;
 using FleetManager.Desktop.Views;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Windows;
@@ -9,15 +11,20 @@ using System.Windows.Input;
 
 namespace FleetManager.Desktop;
 
+
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private readonly IDesktopSelfHealingService _selfHealingService;
+    private readonly IServiceProvider _serviceProvider;
     private readonly Dictionary<Guid, InstallConsoleWindow> _installConsoles = new();
     private readonly Dictionary<Guid, CancellationTokenSource> _installCancellations = new();
 
-    public MainWindow(MainWindowViewModel viewModel)
+    public MainWindow(MainWindowViewModel viewModel, IDesktopSelfHealingService selfHealingService, IServiceProvider serviceProvider)
     {
         _viewModel = viewModel;
+        _selfHealingService = selfHealingService;
+        _serviceProvider = serviceProvider;
         InitializeComponent();
         DataContext = _viewModel;
         Loaded += OnLoaded;
@@ -26,12 +33,17 @@ public partial class MainWindow : Window
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
-        await RunUiActionAsync(_viewModel.InitializeAsync);
+        await RunUiActionAsync(async () =>
+        {
+            await _viewModel.InitializeAsync();
+            await _selfHealingService.StartAsync();
+        });
     }
 
     protected override async void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        await _selfHealingService.StopAsync();
         await _viewModel.DisconnectSignalRAsync();
     }
 
@@ -573,6 +585,13 @@ public partial class MainWindow : Window
     private static WorkerInboxEventViewModel? GetWorkerInboxEventFromSender(object sender)
         => sender is FrameworkElement element ? element.DataContext as WorkerInboxEventViewModel : null;
 
+    private void ManageLocalNodes_Click(object sender, RoutedEventArgs e)
+    {
+        var registryWindow = _serviceProvider.GetRequiredService<NodeRegistryWindow>();
+        registryWindow.Owner = this;
+        registryWindow.ShowDialog();
+    }
+
     private async Task RunUiActionAsync(Func<Task> action)
     {
         try
@@ -584,4 +603,5 @@ public partial class MainWindow : Window
             MessageBox.Show(this, ex.Message, "FleetManager", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
+
 }

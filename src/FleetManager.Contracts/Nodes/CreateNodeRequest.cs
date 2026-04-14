@@ -6,7 +6,7 @@ public sealed class CreateNodeRequest
     public string IpAddress { get; set; } = string.Empty;
     public int SshPort { get; set; } = 22;
     public int ControlPort { get; set; } = 9001;
-    public string SshUsername { get; set; } = string.Empty;
+    public string SshUsername { get; set; } = "root";
     public string? SshPassword { get; set; }
     public string? SshPrivateKey { get; set; }
     public string AuthType { get; set; } = "SshKey";

@@ -30,6 +30,29 @@
 				"$msCompile"
 			],
 			"group": "build"
+		},
+		{
+			"label": "copilot-collect-remote-viewer-diagnostics",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"scripts/collect-remote-viewer-diagnostics.ps1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot-git-status-post-fix",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"--short"
+			],
+			"isBackground": false
 		}
 	]
 }

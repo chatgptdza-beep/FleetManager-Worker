@@ -1,0 +1,135 @@
+<Window x:Class="FleetManager.Desktop.EditNodeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit Node"
+        Width="540"
+        SizeToContent="Height"
+        MaxHeight="860"
+        WindowStartupLocation="CenterOwner"
+        Background="#0E1A24">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Border Margin="20"
+                    Padding="24"
+                    Background="#162532"
+                    BorderBrush="#2C3A43"
+                    BorderThickness="1"
+                    CornerRadius="24">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <StackPanel>
+                        <TextBlock Foreground="#F8F5F1"
+                                   FontSize="24"
+                                   FontWeight="Bold"
+                                   Text="Edit Node Connection" />
+                        <TextBlock Margin="0,6,0,0"
+                                   Foreground="#B9C4CD"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"
+                                   Text="Update the IP address and SSH credentials for this locally-registered node." />
+                    </StackPanel>
+
+                    <!-- Read-only metadata -->
+                    <Grid Grid.Row="1" Margin="0,20,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Status badge -->
+                        <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,16">
+                            <Border Background="#253845" CornerRadius="8" Padding="10,4" Margin="0,0,10,0">
+                                <TextBlock x:Name="StatusLabel" Foreground="#DCE4EA" FontSize="11" />
+                            </Border>
+                            <TextBlock x:Name="WorkflowIdLabel" Foreground="#61707C" FontSize="11" VerticalAlignment="Center" />
+                        </StackPanel>
+
+                        <!-- Name -->
+                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="Name" />
+                            <TextBox x:Name="NameTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- IP Address -->
+                        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="IP Address" />
+                            <TextBox x:Name="IpAddressTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- SSH Port + Control Port -->
+                        <StackPanel Grid.Row="3" Grid.Column="0" Margin="0,14,8,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="SSH Port" />
+                            <TextBox x:Name="SshPortTextBox" Height="42" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="3" Grid.Column="1" Margin="8,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="Control Port" />
+                            <TextBox x:Name="ControlPortTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- SSH Username -->
+                        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="SSH Username" />
+                            <TextBox x:Name="SshUsernameTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- SSH Password -->
+                        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="SSH Password" />
+                            <TextBox x:Name="SshPasswordTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- SSH Private Key -->
+                        <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="SSH Private Key" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SshPrivateKeyTextBox" Height="42" Padding="12,0" VerticalContentAlignment="Center" IsReadOnly="True" />
+                                <Button Grid.Column="1" Margin="8,0,0,0" Style="{StaticResource GhostButtonStyle}" Height="42" Padding="16,0" Click="ImportKey_Click" Content="Import Key" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Region -->
+                        <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,14,0,0">
+                            <TextBlock Margin="0,0,0,8" Foreground="#B9C4CD" FontSize="13" Text="Region (optional)" />
+                            <TextBox x:Name="RegionTextBox" Height="42" />
+                        </StackPanel>
+
+                        <!-- Test connection result -->
+                        <Border Grid.Row="8" Grid.ColumnSpan="2" Margin="0,18,0,0" Background="#1A2A35" CornerRadius="10" Padding="14,10">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="TestResultLabel" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Click 'Test' to verify SSH connectivity before saving." />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Footer buttons -->
+                    <StackPanel Grid.Row="2" Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource GhostButtonStyle}" Width="110" Height="44" Margin="0,0,10,0" Click="TestConnection_Click" Content="Test" />
+                        <Button Style="{StaticResource GhostButtonStyle}" Width="110" Height="44" Margin="0,0,10,0" Click="Cancel_Click" Content="Cancel" />
+                        <Button Style="{StaticResource PrimaryButtonStyle}" Width="110" Height="44" Click="Save_Click" Content="Save" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Window>

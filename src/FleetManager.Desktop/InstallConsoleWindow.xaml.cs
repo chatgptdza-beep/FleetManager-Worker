@@ -9,6 +9,7 @@ public partial class InstallConsoleWindow : Window
     public InstallConsoleWindow()
     {
         InitializeComponent();
+        UpdateProgress(0);
     }
 
     public void AppendLog(string message)
@@ -19,13 +20,17 @@ public partial class InstallConsoleWindow : Window
             return;
         }
 
-        // Messages starting with %XX are percentage updates
-        if (message.Length >= 3 && message[0] == '%' && int.TryParse(message.AsSpan(1, 2), out var pct))
+        if (TryParseProgress(message, out var pct))
         {
-            InstallProgress.IsIndeterminate = false;
-            InstallProgress.Value = pct;
-            HeaderText.Text = $"Installing FleetManager Agent... {pct}%";
+            UpdateProgress(pct);
             return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(message)
+            && !message.StartsWith("  >", StringComparison.Ordinal)
+            && !message.StartsWith("  [err]", StringComparison.Ordinal))
+        {
+            StatusText.Text = message;
         }
 
         LogOutput.Text += message + Environment.NewLine;
@@ -40,10 +45,9 @@ public partial class InstallConsoleWindow : Window
             return;
         }
 
+        UpdateProgress(100);
         HeaderText.Text = "Agent Installed Successfully";
         HeaderText.Foreground = new SolidColorBrush(Color.FromRgb(0x47, 0xC1, 0xA8));
-        InstallProgress.IsIndeterminate = false;
-        InstallProgress.Value = 100;
         StatusText.Text = "Installation complete.";
         CloseBtn.IsEnabled = true;
     }
@@ -56,14 +60,40 @@ public partial class InstallConsoleWindow : Window
             return;
         }
 
+        UpdateProgress(100);
         HeaderText.Text = "Installation Failed";
         HeaderText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
-        InstallProgress.IsIndeterminate = false;
         InstallProgress.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
-        InstallProgress.Value = 100;
         StatusText.Text = $"Error: {error}";
         CloseBtn.IsEnabled = true;
         AppendLog($"\n*** FAILED: {error} ***");
+    }
+
+    private void UpdateProgress(int pct)
+    {
+        var clamped = Math.Clamp(pct, 0, 100);
+        InstallProgress.IsIndeterminate = false;
+        InstallProgress.Value = clamped;
+        ProgressPercentText.Text = $"{clamped}%";
+        HeaderText.Text = $"Installing FleetManager Agent... {clamped}%";
+    }
+
+    private static bool TryParseProgress(string message, out int pct)
+    {
+        pct = 0;
+        if (string.IsNullOrWhiteSpace(message) || message[0] != '%')
+        {
+            return false;
+        }
+
+        var digitCount = 0;
+        for (var index = 1; index < message.Length && char.IsDigit(message[index]); index++)
+        {
+            digitCount++;
+        }
+
+        return digitCount > 0
+            && int.TryParse(message.AsSpan(1, digitCount), out pct);
     }
 
     private void CloseBtn_Click(object sender, RoutedEventArgs e)

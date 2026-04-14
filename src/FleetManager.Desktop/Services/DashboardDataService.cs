@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Net;
 using System.Text.Json;
 using FleetManager.Contracts.Accounts;
 using FleetManager.Contracts.Nodes;
@@ -10,29 +11,45 @@ namespace FleetManager.Desktop.Services;
 
 public sealed class DashboardDataService : IDashboardDataService
 {
-    private readonly HttpClient _httpClient;
+    private HttpClient _httpClient;
     private readonly SemaphoreSlim _authLock = new(1, 1);
     private string? _bearerToken;
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(10);
 
     public DashboardDataService()
     {
-        CurrentBaseUrl = NormalizeBaseUrl(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL") ?? "http://localhost:5188/");
-        _httpClient = new HttpClient
+        _httpClient = CreateHttpClient();
+
+        CurrentBaseUrl = string.Empty;
+
+        var configuredBaseUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL");
+        if (TryNormalizeRemoteBaseUrl(configuredBaseUrl, out var normalizedBaseUrl))
         {
-            BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute),
-            Timeout = TimeSpan.FromSeconds(10)
-        };
+            ApplyBaseUrl(normalizedBaseUrl);
+        }
     }
 
-    public string CurrentModeLabel => "API mode";
+    public string CurrentModeLabel => HasConfiguredBaseUrl ? "API mode" : "No real API configured";
     public string CurrentBaseUrl { get; private set; }
+    public bool HasConfiguredBaseUrl { get; private set; }
     public string? BearerToken => _bearerToken;
 
     public void ConfigureBaseUrl(string baseUrl)
     {
-        CurrentBaseUrl = NormalizeBaseUrl(baseUrl);
-        _httpClient.BaseAddress = new Uri(CurrentBaseUrl, UriKind.Absolute);
-        _httpClient.DefaultRequestHeaders.Authorization = null;
+        if (!TryNormalizeRemoteBaseUrl(baseUrl, out var normalizedBaseUrl))
+        {
+            throw new InvalidOperationException(
+                "API base URL must point to a real remote server. localhost and loopback addresses are not allowed.");
+        }
+
+        ApplyBaseUrl(normalizedBaseUrl);
+    }
+
+    public void ClearBaseUrl()
+    {
+        CurrentBaseUrl = string.Empty;
+        HasConfiguredBaseUrl = false;
+        ReplaceHttpClient();
         _bearerToken = null;
     }
 
@@ -278,6 +295,8 @@ public sealed class DashboardDataService : IDashboardDataService
 
     private async Task EnsureAuthenticatedAsync(CancellationToken cancellationToken)
     {
+        EnsureBaseUrlConfigured();
+
         if (!string.IsNullOrWhiteSpace(_bearerToken))
         {
             return;
@@ -325,15 +344,89 @@ public sealed class DashboardDataService : IDashboardDataService
             return configuredPassword.Trim();
         }
 
-        if (Uri.TryCreate(CurrentBaseUrl, UriKind.Absolute, out var baseUri)
-            && (string.Equals(baseUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(baseUri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)))
+        var adminPassword = Environment.GetEnvironmentVariable("AdminPassword");
+        if (!string.IsNullOrWhiteSpace(adminPassword))
         {
-            return "Admin@FleetMgr2026!";
+            return adminPassword.Trim();
+        }
+
+        return "Admin@FleetMgr2026!";
+    }
+
+    private void EnsureBaseUrlConfigured()
+    {
+        if (HasConfiguredBaseUrl && _httpClient.BaseAddress is not null)
+        {
+            return;
         }
 
         throw new InvalidOperationException(
-            "Missing FLEETMANAGER_API_PASSWORD for the configured API endpoint.");
+            "No real API server is configured yet. Add a VPS with a real server address or load a saved configuration.");
+    }
+
+    private void ApplyBaseUrl(string normalizedBaseUrl)
+    {
+        CurrentBaseUrl = normalizedBaseUrl;
+        HasConfiguredBaseUrl = true;
+        ReplaceHttpClient(new Uri(CurrentBaseUrl, UriKind.Absolute));
+        _bearerToken = null;
+    }
+
+    private void ReplaceHttpClient(Uri? baseAddress = null)
+    {
+        var previousClient = _httpClient;
+        _httpClient = CreateHttpClient(baseAddress);
+        previousClient.Dispose();
+    }
+
+    private static HttpClient CreateHttpClient(Uri? baseAddress = null)
+    {
+        var client = new HttpClient
+        {
+            Timeout = DefaultTimeout
+        };
+
+        if (baseAddress is not null)
+        {
+            client.BaseAddress = baseAddress;
+        }
+
+        return client;
+    }
+
+    private static bool TryNormalizeRemoteBaseUrl(string? baseUrl, out string normalizedBaseUrl)
+    {
+        normalizedBaseUrl = string.Empty;
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return false;
+        }
+
+        var candidate = NormalizeBaseUrl(baseUrl.Trim());
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Host, "0.0.0.0", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (IPAddress.TryParse(uri.Host, out var ipAddress) && IPAddress.IsLoopback(ipAddress))
+        {
+            return false;
+        }
+
+        normalizedBaseUrl = candidate;
+        return true;
     }
 
     private static string NormalizeBaseUrl(string baseUrl)

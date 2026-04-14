@@ -67,8 +67,22 @@ Publish a Linux package locally before provisioning a node from the Desktop app:
 .\scripts\publish-agent.ps1
 ```
 
-This writes the package to `out/agent`, which the Desktop SSH installer now prefers automatically.
-The publish step also writes `.fleetmanager.sha256`, and the Linux installer verifies that manifest before copying files into `/opt/fleetmanager-agent`.
+This writes the unpacked package to `out/agent` and also creates a single GitHub-ready bundle at `out/bundles/fleetmanager-agent-bundle-linux-x64.zip`.
+The publish step also writes `.fleetmanager.sha256` for the unpacked agent folder and a bundle SHA256 file beside the zip.
+The Desktop SSH installer now downloads that prebuilt bundle from GitHub instead of cloning and building the repository on the VPS.
+
+Recommended GitHub path for the bundle:
+
+```text
+deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip
+```
+
+Optional overrides:
+
+```powershell
+$env:FLEETMANAGER_AGENT_BUNDLE_URL = "https://raw.githubusercontent.com/<owner>/<repo>/main/deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip"
+$env:FLEETMANAGER_AGENT_BUNDLE_SHA256 = "<sha256 of the zip file>"
+```
 
 Manual publish example:
 
@@ -88,23 +102,24 @@ dotnet publish .\src\FleetManager.Agent\FleetManager.Agent.csproj `
 .\scripts\publish-agent.ps1
 ```
 
-### 2. Copy files to the VPS
+### 2. Download the bundle on the VPS
 
 ```bash
-scp -r out/agent user@VPS_IP:/tmp/fleetmanager-agent
-scp -r deploy/linux user@VPS_IP:/tmp/fleetmanager-deploy
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip -o /tmp/fleetmanager-agent-bundle.zip
+mkdir -p /tmp/fleetmanager-bundle
+unzip -oq /tmp/fleetmanager-agent-bundle.zip -d /tmp/fleetmanager-bundle
 ```
 
 ### 3. Install the service
 
 ```bash
-ssh user@VPS_IP "sudo bash /tmp/fleetmanager-deploy/install-worker-ubuntu.sh /tmp/fleetmanager-agent"
+ssh user@VPS_IP "sudo bash /tmp/fleetmanager-bundle/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-bundle/agent"
 ```
 
 ### 4. Register the node
 
 ```bash
-bash deploy/linux/register-node.sh \
+bash /tmp/fleetmanager-bundle/deploy/linux/register-node.sh \
   --api https://your-api.example.com \
   --admin-password '<operator password>' \
   --name VPS-01 \

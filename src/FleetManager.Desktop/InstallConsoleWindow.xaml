@@ -16,9 +16,24 @@
         <TextBlock x:Name="HeaderText" FontSize="14" FontWeight="Bold" Foreground="#47C1A8" Margin="0,0,0,8"
                    Text="Installing FleetManager Agent..." />
 
-        <ProgressBar x:Name="InstallProgress" Grid.Row="1" Height="6" Margin="0,0,0,8"
-                     Background="#111B24" BorderThickness="0" Foreground="#47C1A8"
-                     Minimum="0" Maximum="100" Value="0" />
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ProgressBar x:Name="InstallProgress" Height="8" Margin="0,0,12,0"
+                         VerticalAlignment="Center"
+                         Background="#111B24" BorderThickness="0" Foreground="#47C1A8"
+                         Minimum="0" Maximum="100" Value="0" />
+
+            <TextBlock x:Name="ProgressPercentText" Grid.Column="1"
+                       VerticalAlignment="Center"
+                       Foreground="#F8F5F1"
+                       FontSize="12"
+                       FontWeight="Bold"
+                       Text="0%" />
+        </Grid>
 
         <Border Grid.Row="2" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="6" Padding="8">
             <ScrollViewer x:Name="LogScroller" VerticalScrollBarVisibility="Auto">

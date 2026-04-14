@@ -12,7 +12,7 @@ builder.Services.AddHttpClient("AgentClient")
     {
         options.Retry.MaxRetryAttempts = 3;
         options.Retry.Delay = TimeSpan.FromSeconds(2);
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(30);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
         options.TotalRequestTimeout.Timeout = TimeSpan.FromMinutes(2);
     });
 

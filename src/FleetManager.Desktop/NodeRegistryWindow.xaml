@@ -1,0 +1,91 @@
+<Window x:Class="FleetManager.Desktop.NodeRegistryWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Local Node Registry"
+        Width="1040"
+        Height="680"
+        MinWidth="780"
+        MinHeight="450"
+        WindowStartupLocation="CenterOwner"
+        Background="#0E1A24">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel>
+            <TextBlock Foreground="#F8F5F1"
+                       FontSize="24"
+                       FontWeight="Bold"
+                       Text="Local Node Registry" />
+            <TextBlock Margin="0,6,0,0"
+                       Foreground="#B9C4CD"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       Text="View and manage locally-tracked VPS nodes. Update IP, SSH credentials, or diagnose connectivity." />
+        </StackPanel>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="1" Margin="0,16,0,0" Orientation="Horizontal">
+            <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Padding="18,0" Margin="0,0,10,0" Click="Refresh_Click" Content="⟳  Refresh" />
+            <Button Style="{StaticResource GhostButtonStyle}" Height="38" Padding="18,0" Margin="0,0,10,0" Click="DiagnoseAll_Click" Content="Diagnose All" />
+            <TextBlock x:Name="NodeCountLabel" Foreground="#61707C" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0" />
+        </StackPanel>
+
+        <!-- Node DataGrid -->
+        <DataGrid x:Name="NodesGrid"
+                  Grid.Row="2"
+                  Margin="0,14,0,0"
+                  SelectionMode="Single"
+                  MouseDoubleClick="NodesGrid_MouseDoubleClick">
+            <DataGrid.Columns>
+
+                <DataGridTextColumn Header="Name"
+                                    Binding="{Binding Name}"
+                                    Width="130" />
+
+                <DataGridTextColumn Header="IP Address"
+                                    Binding="{Binding CurrentIp}"
+                                    Width="130" />
+
+                <DataGridTextColumn Header="SSH"
+                                    Binding="{Binding SshSummary}"
+                                    Width="100" />
+
+                <DataGridTextColumn Header="Local Port"
+                                    Binding="{Binding LocalPort}"
+                                    Width="80" />
+
+                <DataGridTextColumn Header="Status"
+                                    Binding="{Binding StatusLabel}"
+                                    Width="110" />
+
+                <DataGridTextColumn Header="Tunnel"
+                                    Binding="{Binding TunnelLabel}"
+                                    Width="85" />
+
+                <DataGridTextColumn Header="Last Check"
+                                    Binding="{Binding LastCheckLabel}"
+                                    Width="110" />
+
+                <DataGridTextColumn Header="Message"
+                                    Binding="{Binding StatusMessage}"
+                                    Width="*" />
+
+            </DataGrid.Columns>
+
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Edit Node…" Click="Edit_Click" />
+                    <MenuItem Header="Diagnose" Click="Diagnose_Click" />
+                    <MenuItem Header="Toggle Tunnel" Click="ToggleTunnel_Click" />
+                    <Separator />
+                    <MenuItem Header="Remove from Registry" Click="Remove_Click" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+        </DataGrid>
+    </Grid>
+</Window>

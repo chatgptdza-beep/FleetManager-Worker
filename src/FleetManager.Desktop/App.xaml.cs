@@ -21,20 +21,56 @@ public partial class App : Application
 
     private static void ConfigureServices(IServiceCollection services)
     {
-        // Data & provisioning
+        // Data and provisioning
         services.AddSingleton<IDashboardDataService, DashboardDataService>();
         services.AddSingleton<ISshProvisioningService, SshProvisioningService>();
+        services.AddSingleton<IDesktopNodeRegistry, DesktopNodeRegistry>();
+        services.AddSingleton<ISshTunnelManager, SshTunnelManager>();
+        services.AddSingleton<IDesktopSelfHealingService, DesktopSelfHealingService>();
 
-        // ViewModel — scoped so each window gets its own instance if needed
+        // ViewModel scoped so each window gets its own instance if needed
         services.AddTransient<MainWindowViewModel>();
 
         // Main window itself (receives ViewModel via constructor)
         services.AddTransient<MainWindow>();
+
+        // Node registry management window
+        services.AddTransient<NodeRegistryWindow>();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        _serviceProvider?.Dispose();
+        if (_serviceProvider is not null)
+        {
+            try
+            {
+                var selfHealingService = _serviceProvider.GetService<IDesktopSelfHealingService>();
+                if (selfHealingService is not null)
+                {
+                    selfHealingService.StopAsync().GetAwaiter().GetResult();
+                    selfHealingService.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                var tunnelManager = _serviceProvider.GetService<ISshTunnelManager>();
+                if (tunnelManager is not null)
+                {
+                    tunnelManager.CloseAllAsync().GetAwaiter().GetResult();
+                    tunnelManager.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+            }
+            catch
+            {
+            }
+
+            _serviceProvider.Dispose();
+        }
+
         base.OnExit(e);
     }
 }

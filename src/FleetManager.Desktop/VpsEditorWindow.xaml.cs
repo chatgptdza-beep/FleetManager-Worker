@@ -10,6 +10,7 @@ public partial class VpsEditorWindow : Window
     public VpsEditorWindow()
     {
         InitializeComponent();
+        SshUsernameTextBox.Text = "root";
     }
 
     public CreateNodeRequest Request { get; private set; } = new();
@@ -46,7 +47,7 @@ public partial class VpsEditorWindow : Window
             IpAddress = IpAddressTextBox.Text.Trim(),
             SshPort = sshPort,
             ControlPort = controlPort,
-            SshUsername = SshUsernameTextBox.Text.Trim(),
+            SshUsername = "root",
             SshPassword = SshPasswordTextBox.Text?.Trim(),
             SshPrivateKey = SshPrivateKeyTextBox.Text?.Trim(),
             AuthType = string.IsNullOrWhiteSpace(SshPrivateKeyTextBox.Text) ? "Password" : "SshKey",
