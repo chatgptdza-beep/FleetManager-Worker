@@ -115,7 +115,17 @@ public sealed class Worker(
             return;
         }
 
-        var execution = await ExecuteCommandScriptAsync(command, settings, cancellationToken);
+        CommandExecutionResult execution;
+        try
+        {
+            execution = await ExecuteCommandScriptAsync(command, settings, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unhandled exception while executing command {CommandType} ({CommandId}).", command.CommandType, command.CommandId);
+            execution = CommandExecutionResult.Failure($"Unhandled agent error: {ex.Message}");
+        }
+
         await CompleteCommandAsync(client, settings.NodeId, command.CommandId, execution.Succeeded, execution.ResultMessage, cancellationToken);
     }
 
@@ -146,7 +156,7 @@ public sealed class Worker(
             return CommandExecutionResult.Failure($"Script not found: {scriptPath}");
         }
 
-        var payloadDirectory = Path.Combine(Path.GetTempPath(), "fleetmanager-agent");
+        var payloadDirectory = ResolveWritablePayloadDirectory();
         Directory.CreateDirectory(payloadDirectory);
         var payloadPath = Path.Combine(payloadDirectory, $"{command.CommandId}.json");
         await File.WriteAllTextAsync(payloadPath, command.PayloadJson, new UTF8Encoding(false), cancellationToken);
@@ -227,6 +237,42 @@ public sealed class Worker(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to delete temporary payload file {PayloadPath}.", path);
+        }
+    }
+
+    private static string ResolveWritablePayloadDirectory()
+    {
+        var candidates = new[]
+        {
+            Path.Combine(Path.GetTempPath(), "fleetmanager-agent"),
+            "/var/lib/fleetmanager/tmp",
+            Path.Combine(AppContext.BaseDirectory, "tmp")
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (TryEnsureWritableDirectory(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        throw new InvalidOperationException("No writable payload directory is available for command execution.");
+    }
+
+    private static bool TryEnsureWritableDirectory(string path)
+    {
+        try
+        {
+            Directory.CreateDirectory(path);
+            var probePath = Path.Combine(path, $".probe-{Guid.NewGuid():N}");
+            File.WriteAllText(probePath, "ok", new UTF8Encoding(false));
+            File.Delete(probePath);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

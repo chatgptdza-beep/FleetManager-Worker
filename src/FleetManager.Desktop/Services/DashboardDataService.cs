@@ -217,7 +217,14 @@ public sealed class DashboardDataService : IDashboardDataService
             return null;
         }
 
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                ? $"Failed to update account. HTTP {(int)response.StatusCode}."
+                : body);
+        }
+
         return await response.Content.ReadFromJsonAsync<AccountSummaryResponse>(cancellationToken: cancellationToken);
     }
 

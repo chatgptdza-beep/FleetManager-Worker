@@ -44,8 +44,20 @@ public sealed class AccountsController(
     [HttpPut("{accountId:guid}")]
     public async Task<ActionResult<AccountSummaryResponse>> UpdateAsync(Guid accountId, [FromBody] UpdateAccountRequest request, CancellationToken cancellationToken)
     {
-        var updated = await accountService.UpdateAccountAsync(accountId, request, cancellationToken);
-        if (updated is null) return NotFound();
+        AccountSummaryResponse? updated;
+        try
+        {
+            updated = await accountService.UpdateAccountAsync(accountId, request, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+
+        if (updated is null)
+        {
+            return NotFound();
+        }
 
         await hub.Clients.All.SendBotStatusChanged(accountId, updated.Status);
         return Ok(updated);

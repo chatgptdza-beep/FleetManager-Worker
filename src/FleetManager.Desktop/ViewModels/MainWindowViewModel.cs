@@ -874,7 +874,22 @@ public sealed class MainWindowViewModel : ViewModelBase
             }
 
             await ReloadAsync(SelectedNode?.NodeId, account.AccountId);
-            StatusMessage = $"{commandType} executed for {account.Email} | {SourceBanner}";
+            if (commandType == "FetchSessionLogs")
+            {
+                var summary = string.IsNullOrWhiteSpace(command.ResultMessage)
+                    ? "No log output returned."
+                    : command.ResultMessage.Trim();
+                StatusMessage = $"Logs for {account.Email}: {summary} | {SourceBanner}";
+            }
+            else if (commandType == "OpenAssignedSession" && !string.IsNullOrWhiteSpace(command.ResultMessage))
+            {
+                StatusMessage = $"{command.ResultMessage.Trim()} | {SourceBanner}";
+            }
+            else
+            {
+                StatusMessage = $"{commandType} executed for {account.Email} | {SourceBanner}";
+            }
+
             return;
         }
 
@@ -966,7 +981,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private static bool ShouldWaitForCommandCompletion(string commandType)
         => string.Equals(commandType, "StartBrowser", StringComparison.Ordinal)
            || string.Equals(commandType, "StopBrowser", StringComparison.Ordinal)
-           || string.Equals(commandType, "OpenAssignedSession", StringComparison.Ordinal);
+           || string.Equals(commandType, "OpenAssignedSession", StringComparison.Ordinal)
+           || string.Equals(commandType, "FetchSessionLogs", StringComparison.Ordinal);
 
     private async Task LoadNodesAsync()
     {
@@ -1264,7 +1280,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private async Task<NodeCommandStatusResponse?> WaitForCommandResultAsync(Guid nodeId, Guid commandId)
     {
-        for (var attempt = 0; attempt < 12; attempt++)
+        for (var attempt = 0; attempt < 45; attempt++)
         {
             var command = await _dataService.GetNodeCommandStatusAsync(nodeId, commandId);
             if (command is null)

@@ -172,13 +172,29 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
 
     private static AccountStatus ParseStatus(string status)
     {
-        if (!Enum.TryParse<AccountStatus>(status, true, out var parsed))
+        var normalized = status?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
         {
-            throw new InvalidOperationException("Unsupported account status.");
+            throw new InvalidOperationException("Account status is required.");
         }
 
+        if (Enum.TryParse<AccountStatus>(normalized, true, out var parsed))
+        {
+            return parsed;
+        }
+
+        parsed = normalized.ToLowerInvariant() switch
+        {
+            "ready" => AccountStatus.Stable,
+            "active" => AccountStatus.Running,
+            "pending" or "queued" => AccountStatus.Waiting,
+            "stoprequested" or "stop_requested" => AccountStatus.Stopping,
+            "manualrequired" or "manual_required" => AccountStatus.Manual,
+            _ => throw new InvalidOperationException($"Unsupported account status '{normalized}'.")
+        };
+
         return parsed;
-    }
+        }
 
     private static string NormalizeRequired(string value, string fieldName)
     {

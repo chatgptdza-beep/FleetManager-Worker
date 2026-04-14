@@ -53,6 +53,7 @@ if id -u "$BROWSER_USER" >/dev/null 2>&1; then
     --no-default-browser-check \
     chrome://newtab >> "$SESSION_DIR/browser.log" 2>&1 &
 else
+  mkdir -p "$XDG_CONFIG_DIR" "$XDG_CACHE_DIR"
   chmod 700 "$PROFILE_ROOT" "$PROFILE_DIR" "$XDG_CONFIG_DIR" "$XDG_CACHE_DIR" || true
   DISPLAY="$FM_DISPLAY" HOME="/root" XDG_CONFIG_HOME="$XDG_CONFIG_DIR" XDG_CACHE_HOME="$XDG_CACHE_DIR" "$BROWSER_BIN" \
     --user-data-dir="$PROFILE_DIR" \
