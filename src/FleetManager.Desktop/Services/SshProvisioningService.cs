@@ -443,7 +443,7 @@ public class SshProvisioningService : ISshProvisioningService
         {
             ["ConnectionStrings"] = new Dictionary<string, string>
             {
-                ["DefaultConnection"] = $"Host=localhost;Database={ApiDatabaseName};Username={ApiDatabaseUser};Password={databasePassword}"
+                ["DefaultConnection"] = $"Host=localhost;Database={ApiDatabaseName.ToLowerInvariant()};Username={ApiDatabaseUser};Password={databasePassword}"
             },
             ["Jwt"] = new Dictionary<string, string>
             {
