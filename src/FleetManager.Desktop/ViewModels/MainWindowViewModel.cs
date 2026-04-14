@@ -549,6 +549,9 @@ public sealed class MainWindowViewModel : ViewModelBase
             await _sshProvisioningService.ConfigureAgentAsync(request, created.Id, agentApiUrl, installProgress, cancellationToken);
             installProgress?.Report("%95");
 
+            installProgress?.Report("Waiting for first heartbeat from VPS agent...");
+            await WaitForFirstHeartbeatAsync(created.Id, installProgress, cancellationToken);
+
             // Mark the node as Online now that agent is installed and configured.
             // The agent heartbeat will maintain the status going forward.
             installProgress?.Report("Updating node status to Online...");
@@ -587,7 +590,15 @@ public sealed class MainWindowViewModel : ViewModelBase
             return publicOverride.TrimEnd('/') + "/";
 
         if (!Uri.TryCreate(desktopApiUrl, UriKind.Absolute, out var apiUri))
-            return desktopApiUrl;
+            throw new InvalidOperationException(
+                "Desktop API URL is invalid. Set a valid API base URL or FLEETMANAGER_PUBLIC_API_URL.");
+
+        // If the Desktop is connected directly to the same VPS IP, force localhost
+        // on the VPS for reliability and to avoid public routing/NAT issues.
+        if (string.Equals(apiUri.Host, vpsIp, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{apiUri.Scheme}://127.0.0.1:{apiUri.Port}/";
+        }
 
         // If the desktop is NOT talking to localhost, the agent can use the same URL
         if (!string.Equals(apiUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
@@ -604,8 +615,34 @@ public sealed class MainWindowViewModel : ViewModelBase
             return $"{apiUri.Scheme}://{machineIp.Trim()}:{apiUri.Port}/";
         }
 
-        // Last resort: keep the original URL (will likely fail on the VPS)
-        return desktopApiUrl;
+        throw new InvalidOperationException(
+            "Desktop API is localhost, which remote VPS cannot reach. " +
+            "Use VPS API URL in app settings or set FLEETMANAGER_PUBLIC_API_URL.");
+    }
+
+    private async Task WaitForFirstHeartbeatAsync(Guid nodeId, IProgress<string>? installProgress, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 45; // about 90 seconds total
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var node = await _dataService.GetNodeAsync(nodeId, cancellationToken);
+            if (node?.LastHeartbeatAtUtc is not null)
+            {
+                installProgress?.Report($"Heartbeat received at {node.LastHeartbeatAtUtc:O}");
+                return;
+            }
+
+            if (attempt % 5 == 0)
+            {
+                installProgress?.Report($"Still waiting for heartbeat... ({attempt * 2}s)");
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+        }
+
+        throw new InvalidOperationException(
+            "Agent installed but no heartbeat was received. Check API URL mapping and agent service logs on VPS.");
     }
 
     public async Task UpdateAccountAsync(Guid accountId, UpdateAccountRequest request)

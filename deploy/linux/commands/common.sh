@@ -132,11 +132,22 @@ resolve_browser_bin() {
     return
   fi
 
-  for candidate in /usr/bin/google-chrome /usr/bin/google-chrome-stable /usr/bin/chromium-browser /usr/bin/chromium /snap/bin/chromium; do
+  for candidate in \
+    /usr/bin/google-chrome \
+    /usr/bin/google-chrome-stable \
+    /snap/chromium/current/usr/lib/chromium-browser/chrome \
+    /usr/bin/chromium \
+    /usr/bin/chromium-browser \
+    /snap/bin/chromium; do
     if [[ -x "$candidate" ]]; then
       local resolved_candidate
       resolved_candidate="$(readlink -f "$candidate" 2>/dev/null || printf '%s' "$candidate")"
-      if [[ "${FM_ALLOW_SNAP_BROWSER:-0}" != "1" ]] && [[ "$resolved_candidate" == /snap/* || "$resolved_candidate" == /var/lib/snapd/snap/* || "$candidate" == /snap/* ]]; then
+
+      # Skip snap wrappers by default (they fail under service cgroups),
+      # but allow explicit override or direct Chromium ELF path.
+      if [[ "$candidate" != "/snap/chromium/current/usr/lib/chromium-browser/chrome" ]] \
+         && [[ "${FM_ALLOW_SNAP_BROWSER:-0}" != "1" ]] \
+         && [[ "$resolved_candidate" == /snap/* || "$resolved_candidate" == /var/lib/snapd/snap/* || "$candidate" == /snap/* ]]; then
         continue
       fi
       printf '%s\n' "$candidate"

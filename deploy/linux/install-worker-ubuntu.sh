@@ -16,7 +16,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates curl python3 procps xz-utils \
-  xvfb x11vnc fluxbox novnc websockify || true
+  xvfb x11vnc fluxbox novnc websockify xdg-utils \
+  libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+  libasound2t64 || true
 
 if ! command -v chromium >/dev/null 2>&1 && ! command -v chromium-browser >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y chromium-browser || DEBIAN_FRONTEND=noninteractive apt-get install -y chromium || true
@@ -25,6 +27,12 @@ fi
 id -u fleetmgr >/dev/null 2>&1 || useradd --system --create-home --home-dir /home/fleetmgr --shell /usr/sbin/nologin fleetmgr
 
 mkdir -p "$INSTALL_DIR" "$DATA_DIR"
+
+# Worker writes command payload files here before script execution.
+# Pre-create it with fleetmgr ownership to avoid permission errors.
+mkdir -p /tmp/fleetmanager-agent
+chown -R fleetmgr:fleetmgr /tmp/fleetmanager-agent
+chmod 770 /tmp/fleetmanager-agent
 
 if [[ -f "$PACKAGE_DIR/.fleetmanager.sha256" ]]; then
   (
