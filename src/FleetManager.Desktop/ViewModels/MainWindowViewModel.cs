@@ -615,6 +615,17 @@ public sealed class MainWindowViewModel : ViewModelBase
             return $"{apiUri.Scheme}://{machineIp.Trim()}:{apiUri.Port}/";
         }
 
+        // Zero-touch fallback: if operator entered a VPS IP and Desktop API is localhost,
+        // assume the API is hosted on that VPS and use it automatically.
+        if (!string.IsNullOrWhiteSpace(vpsIp))
+        {
+            var normalizedVpsIp = vpsIp.Trim();
+            if (Uri.CheckHostName(normalizedVpsIp) is UriHostNameType.IPv4 or UriHostNameType.IPv6 or UriHostNameType.Dns)
+            {
+                return $"{apiUri.Scheme}://{normalizedVpsIp}:{apiUri.Port}/";
+            }
+        }
+
         throw new InvalidOperationException(
             "Desktop API is localhost, which remote VPS cannot reach. " +
             "Use VPS API URL in app settings or set FLEETMANAGER_PUBLIC_API_URL.");
