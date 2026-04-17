@@ -153,6 +153,51 @@ Example:
 }
 ```
 
+## QuickReserve Extension Rollout (New VPS)
+
+The agent now supports VPS-wide unpacked browser extensions through `Agent.BrowserExtensions` and `FM_BROWSER_EXTENSIONS`.
+`StartBrowser.sh` stages each extension into the account profile and launches Chromium with:
+
+- `--disable-extensions-except=<staged_paths>`
+- `--load-extension=<staged_paths>`
+
+Use the automation script below when adding a new VPS so extension setup is reproducible and GitHub-backed:
+
+```powershell
+.\scripts\setup-vps-extension-and-launcher-bridge.ps1 `
+  -VpsIp 89.116.26.182 `
+  -RootPassword '<root-password>' `
+  -LocalExtensionPath 'C:\Users\<you>\Desktop\QuickReserve\QuickReserve Loader' `
+  -StartLauncherTunnel
+```
+
+What this script does:
+
+- Uploads the unpacked extension to `/opt/fleetmanager-agent/extensions/quickreserve-loader`.
+- Normalizes nested folder layouts and verifies `manifest.json` on VPS.
+- Writes `Agent.BrowserExtensions` in `/opt/fleetmanager-agent/appsettings.json`.
+- Writes systemd override `FM_BROWSER_EXTENSIONS=...` for immediate runtime parity.
+- Restarts `fleetmanager-agent` and verifies service health.
+- Optionally starts local reverse tunnel to VPS for Launcher localhost ports.
+
+Default Launcher bridge ports are:
+
+- `45321`
+- `65430`
+- `65475`
+
+These can be overridden with `-LauncherPorts`.
+
+## Capacity Notes (50 Browsers)
+
+Ports are not the bottleneck for 50 browser sessions. The main constraints are CPU, RAM, and browser rendering overhead on each VPS.
+
+- A single Launcher port can multiplex many connections; using `45321/65430/65475` is fine for dozens of sessions.
+- For 50 concurrent Chromium sessions, plan by node resources first.
+- Practical baseline: start around 10-20 sessions per medium VPS, then scale horizontally to more VPS nodes.
+- Monitor and enforce limits using node metrics: CPU under sustained 80-85%, RAM headroom at least 20%.
+- Keep reverse tunnel stable with keepalive options (`ServerAliveInterval`, `ServerAliveCountMax`) when using SSH.
+
 ## Service Management
 
 ```bash

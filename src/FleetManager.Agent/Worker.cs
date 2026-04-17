@@ -174,6 +174,12 @@ public sealed class Worker(
             }
         };
 
+        var browserExtensions = BuildBrowserExtensionsEnvironmentValue(settings.BrowserExtensions);
+        if (!string.IsNullOrWhiteSpace(browserExtensions))
+        {
+            process.StartInfo.Environment["FM_BROWSER_EXTENSIONS"] = browserExtensions;
+        }
+
         // Enforce a maximum execution time to prevent runaway scripts
         var commandTimeout = TimeSpan.FromMinutes(settings.CommandTimeoutMinutes);
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -274,6 +280,33 @@ public sealed class Worker(
         {
             return false;
         }
+    }
+
+    private static string BuildBrowserExtensionsEnvironmentValue(IEnumerable<string>? extensionPaths)
+    {
+        if (extensionPaths is null)
+        {
+            return string.Empty;
+        }
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rawPath in extensionPaths)
+        {
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                continue;
+            }
+
+            var trimmed = rawPath.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            seen.Add(trimmed);
+        }
+
+        return seen.Count == 0 ? string.Empty : string.Join(',', seen);
     }
 
     private sealed record CommandExecutionResult(bool Succeeded, string ResultMessage)

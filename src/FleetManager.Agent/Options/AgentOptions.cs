@@ -19,4 +19,7 @@ public sealed class AgentOptions
     public string NodeIpAddress { get; set; } = "127.0.0.1";
     public string NodeName { get; set; } = string.Empty;
     public bool EnableDockerMonitor { get; set; } = false;
+
+    // Unpacked extension directories to load on every StartBrowser command for this VPS.
+    public string[] BrowserExtensions { get; set; } = Array.Empty<string>();
 }

@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
-$projectRoot = "c:\Users\fayss\Desktop\project vps+manager\md file\01_full_project_latest"
+$projectRoot = [string](Resolve-Path (Join-Path $PSScriptRoot '..'))
 $desktopRuntimeStatePath = Join-Path $env:LOCALAPPDATA 'FleetManager\desktop.runtime.json'
 $ip = if ($env:FLEETMANAGER_VPS_IP) { $env:FLEETMANAGER_VPS_IP } else { $null }
 $rootPassword = if ($env:FLEETMANAGER_VPS_ROOT_PASSWORD) { $env:FLEETMANAGER_VPS_ROOT_PASSWORD } else { $null }
@@ -9,6 +9,15 @@ $apiBase = $null
 $apiPassword = if ($env:FLEETMANAGER_API_PASSWORD) { $env:FLEETMANAGER_API_PASSWORD } else { $null }
 $agentApiKey = if ($env:FLEETMANAGER_AGENT_API_KEY) { $env:FLEETMANAGER_AGENT_API_KEY } else { $null }
 $hostKey = if ($env:FLEETMANAGER_SSH_HOSTKEY) { $env:FLEETMANAGER_SSH_HOSTKEY } else { 'ssh-ed25519 255 SHA256:nHMjdmJ1cHzkLLY/8LQwFdhgA7nAoxg16GgBmKBXbI8' }
+
+$browserExtensions = @()
+if ($env:FLEETMANAGER_BROWSER_EXTENSIONS) {
+  $browserExtensions = @($env:FLEETMANAGER_BROWSER_EXTENSIONS.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+if ($browserExtensions.Count -eq 0) {
+  $browserExtensions = @('/opt/fleetmanager-agent/extensions/quickreserve-loader')
+}
 
 if ($env:FLEETMANAGER_API_BASE_URL) {
   $apiBase = $env:FLEETMANAGER_API_BASE_URL.TrimEnd('/')
@@ -50,12 +59,30 @@ function Write-AgentConfig {
       ApiKey = $agentApiKey
       NodeIpAddress = $ip
       EnableDockerMonitor = $false
+      BrowserExtensions = $browserExtensions
     }
   } | ConvertTo-Json -Depth 4
 
   $configBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($configJson))
   $remoteConfig = "printf '%s' '$configBase64' | base64 -d > /opt/fleetmanager-agent/appsettings.json; chown fleetmgr:fleetmgr /opt/fleetmanager-agent/appsettings.json"
   Invoke-Remote $remoteConfig | Out-Null
+}
+
+function Set-RemoteBrowserExtensionsOverride {
+  param([string[]]$Extensions)
+
+  $normalized = @($Extensions | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+  if ($normalized.Count -eq 0) {
+    Write-Output 'BROWSER_EXTENSIONS_OVERRIDE=SKIPPED_EMPTY'
+    return
+  }
+
+  $extensionsCsv = $normalized -join ','
+  $overrideContent = "[Service]`nEnvironment=FM_BROWSER_EXTENSIONS=$extensionsCsv`n"
+  $overrideBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($overrideContent))
+  $remoteOverrideCmd = "mkdir -p /etc/systemd/system/fleetmanager-agent.service.d; printf '%s' '$overrideBase64' | base64 -d > /etc/systemd/system/fleetmanager-agent.service.d/10-browser-extensions.conf"
+  Invoke-Remote $remoteOverrideCmd | Out-Null
+  Write-Output ('BROWSER_EXTENSIONS_OVERRIDE=' + $extensionsCsv)
 }
 
 function Get-RemoteConfiguredNodeId {
@@ -272,6 +299,8 @@ elseif ($configCheck -match 'CONFIG_OK=0') {
     }
   }
 }
+
+Set-RemoteBrowserExtensionsOverride -Extensions $browserExtensions
 
 $finalCmd = 'bash -lc ''systemctl daemon-reload; systemctl restart fleetmanager-agent; sleep 3; echo API_SERVICE=$(systemctl is-active fleetmanager-api 2>/dev/null || true); echo AGENT_SERVICE=$(systemctl is-active fleetmanager-agent 2>/dev/null || true); journalctl -u fleetmanager-agent --no-pager -n 20'''
 
