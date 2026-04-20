@@ -1,9 +1,17 @@
 import paramiko
 import sys
+from script_env import (
+    SSH_HOST as host,
+    SSH_USERNAME as user,
+    SSH_PASSWORD as password,
+    optional_env,
+    require_uuid_list,
+    sql_string_list,
+)
 
-host = "82.223.9.98"
-user = "root"
-password = "$9%&zig$7N"
+purge_node_ids = require_uuid_list("FLEETMANAGER_PURGE_NODE_IDS")
+purge_node_ids_sql = sql_string_list(purge_node_ids)
+extra_node_id = optional_env("FLEETMANAGER_EXTRA_NODE_ID")
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -28,15 +36,15 @@ try:
     run("systemctl stop fleetmanager-api.service", "STOP API")
 
     # Step 2: Write a SQL file on the server, then execute it
-    sql = """
-DELETE FROM "AccountAlerts" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "AccountWorkflowStages" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "ProxyRotationLogs" WHERE "ProxyEntryId" IN (SELECT "Id" FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf')));
-DELETE FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "NodeCommands" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "AgentInstallJobs" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "VpsNodes" WHERE "Id" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
+    sql = f"""
+DELETE FROM "AccountAlerts" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "AccountWorkflowStages" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "ProxyRotationLogs" WHERE "ProxyEntryId" IN (SELECT "Id" FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql})));
+DELETE FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "NodeCommands" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "AgentInstallJobs" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "VpsNodes" WHERE "Id" IN ({purge_node_ids_sql});
 """
     
     # Upload SQL file
@@ -47,12 +55,12 @@ DELETE FROM "VpsNodes" WHERE "Id" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df
     
     run("sudo -u postgres psql -d FleetManagerDb -f /tmp/purge_demo.sql", "PURGE DEMO DATA")
 
-    # Also delete the extra VPS-NEW-01 if it exists
-    sftp = client.open_sftp()
-    with sftp.file("/tmp/purge_extra.sql", "w") as f:
-        f.write("""DELETE FROM "VpsNodes" WHERE "Id" = 'c7b2206d-1ca4-43a3-8bb3-7d10bfc28d6a';\n""")
-    sftp.close()
-    run("sudo -u postgres psql -d FleetManagerDb -f /tmp/purge_extra.sql", "PURGE VPS-NEW-01")
+    if extra_node_id:
+        sftp = client.open_sftp()
+        with sftp.file("/tmp/purge_extra.sql", "w") as f:
+            f.write(f'DELETE FROM "VpsNodes" WHERE "Id" = \'{extra_node_id}\';\n')
+        sftp.close()
+        run("sudo -u postgres psql -d FleetManagerDb -f /tmp/purge_extra.sql", "PURGE EXTRA NODE")
 
     # Verify
     run("""sudo -u postgres psql -d FleetManagerDb -c 'SELECT "Id","Name","IpAddress" FROM "VpsNodes";'""", "REMAINING NODES")

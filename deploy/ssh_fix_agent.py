@@ -1,11 +1,10 @@
 import paramiko
 import json
 import time
+from script_env import SSH_HOST as host, SSH_USERNAME as user, SSH_PASSWORD as password, require_env
 
-host = "82.223.9.98"
-user = "root"
-password = "$9%&zig$7N"
-node_id = "a7e1c2e1-a546-4ab0-9c46-4d977b0520c1"
+node_id = require_env("FLEETMANAGER_NODE_ID")
+admin_password = require_env("FLEETMANAGER_API_PASSWORD")
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -59,7 +58,7 @@ print(json.dumps(config, indent=2))
 
     # Verify node data
     time.sleep(5)
-    token_resp = run("curl -s -X POST http://localhost:5000/api/auth/token -H 'Content-Type: application/json' -d '{\"Password\":\"Admin@FleetMgr2026!\"}'")
+    token_resp = run(f"curl -s -X POST http://localhost:5000/api/auth/token -H 'Content-Type: application/json' -d '{{\"Password\":\"{admin_password}\"}}'")
     token = json.loads(token_resp)["token"]
     
     result = run(f"curl -s -H 'Authorization: Bearer {token}' http://localhost:5000/api/nodes/{node_id}", "NODE DATA AFTER AGENT RESTART")

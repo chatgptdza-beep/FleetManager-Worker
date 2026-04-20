@@ -1,10 +1,20 @@
 import paramiko
 import sys
 import os
+from script_env import (
+    SSH_HOST as host,
+    SSH_USERNAME as user,
+    SSH_PASSWORD as password,
+    optional_env,
+    require_env,
+    require_uuid_list,
+    sql_string_list,
+)
 
-host = "82.223.9.98"
-user = "root"
-password = "$9%&zig$7N"
+admin_password = require_env("FLEETMANAGER_API_PASSWORD")
+purge_node_ids = require_uuid_list("FLEETMANAGER_PURGE_NODE_IDS")
+purge_node_ids_sql = sql_string_list(purge_node_ids)
+extra_node_id = optional_env("FLEETMANAGER_EXTRA_NODE_ID")
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -63,16 +73,17 @@ try:
     run("chmod +x /opt/fleetmanager-api/FleetManager.Api", "SET PERMISSIONS")
 
     # Step 5: Purge demo data from DB BEFORE starting new API
-    sql = """
-DELETE FROM "AccountAlerts" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "AccountWorkflowStages" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf'));
-DELETE FROM "Accounts" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "NodeCommands" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "AgentInstallJobs" WHERE "VpsNodeId" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "VpsNodes" WHERE "Id" IN ('3a5ff57d-e3d8-4d04-858e-fcef5b4997bf','df8ec7ab-4bd8-43c8-bd6d-4b5ebf901437','70c8c145-a615-42eb-82bf-b93112f0fe12','2f4a72af-4f7b-4c51-a3cb-b0ad6e3b3ecf');
-DELETE FROM "VpsNodes" WHERE "Id" = 'c7b2206d-1ca4-43a3-8bb3-7d10bfc28d6a';
+    sql = f"""
+DELETE FROM "AccountAlerts" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "AccountWorkflowStages" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "ProxyEntries" WHERE "AccountId" IN (SELECT "Id" FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql}));
+DELETE FROM "Accounts" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "NodeCommands" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "AgentInstallJobs" WHERE "VpsNodeId" IN ({purge_node_ids_sql});
+DELETE FROM "VpsNodes" WHERE "Id" IN ({purge_node_ids_sql});
 """
+    if extra_node_id:
+        sql += f'DELETE FROM "VpsNodes" WHERE "Id" = \'{extra_node_id}\';\n'
     sftp2 = client.open_sftp()
     with sftp2.file("/tmp/purge_demo.sql", "w") as f:
         f.write(sql)
@@ -92,11 +103,11 @@ DELETE FROM "VpsNodes" WHERE "Id" = 'c7b2206d-1ca4-43a3-8bb3-7d10bfc28d6a';
     run("systemctl is-active fleetmanager-api.service", "API STATUS")
     
     # Final verification via API
-    run("""curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{"Password":"Admin@FleetMgr2026!"}' | python3 -c 'import sys,json;t=json.load(sys.stdin)["token"];print("TOKEN OK")' """, "TEST TOKEN")
+    run(f"""curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{{"Password":"{admin_password}"}}' | python3 -c 'import sys,json;t=json.load(sys.stdin)["token"];print("TOKEN OK")' """, "TEST TOKEN")
 
-    run("""TOKEN=$(curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{"Password":"Admin@FleetMgr2026!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'); curl -s -H "Authorization: Bearer $TOKEN" http://localhost:5000/api/nodes""", "API NODES")
+    run(f"""TOKEN=$(curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{{"Password":"{admin_password}"}}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'); curl -s -H "Authorization: Bearer $TOKEN" http://localhost:5000/api/nodes""", "API NODES")
 
-    run("""TOKEN=$(curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{"Password":"Admin@FleetMgr2026!"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'); curl -s -H "Authorization: Bearer $TOKEN" http://localhost:5000/api/accounts""", "API ACCOUNTS")
+    run(f"""TOKEN=$(curl -s http://localhost:5000/api/auth/token -X POST -H 'Content-Type: application/json' -d '{{"Password":"{admin_password}"}}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'); curl -s -H "Authorization: Bearer $TOKEN" http://localhost:5000/api/accounts""", "API ACCOUNTS")
 
 except Exception as e:
     print(f"FAILED: {e}", file=sys.stderr)

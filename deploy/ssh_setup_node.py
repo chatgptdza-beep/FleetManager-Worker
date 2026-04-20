@@ -1,10 +1,9 @@
 import paramiko
 import json
 import time
+from script_env import SSH_HOST as host, SSH_USERNAME as user, SSH_PASSWORD as password, require_env
 
-host = "82.223.9.98"
-user = "root"
-password = "$9%&zig$7N"
+admin_password = require_env("FLEETMANAGER_API_PASSWORD")
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -26,13 +25,13 @@ try:
     print("SSH OK")
 
     # Step 1: Create node via API from localhost (avoids auth issues)
-    result = run("""curl -s -X POST http://localhost:5000/api/auth/token -H 'Content-Type: application/json' -d '{"Password":"Admin@FleetMgr2026!"}' """)
+    result = run(f"""curl -s -X POST http://localhost:5000/api/auth/token -H 'Content-Type: application/json' -d '{{"Password":"{admin_password}"}}' """)
     token = json.loads(result)["token"]
     print(f"Token: {token[:20]}...")
 
     create_body = json.dumps({
         "Name": "VPS-PROD-01",
-        "IpAddress": "82.223.9.98",
+        "IpAddress": host,
         "SshPort": 22,
         "ControlPort": 9001,
         "SshUsername": "root",
@@ -51,7 +50,7 @@ try:
     except:
         print("Failed to parse node response, trying raw creation via DB...")
         # Fallback: create via psql
-        run("""sudo -u postgres psql -d FleetManagerDb -c "INSERT INTO \\"VpsNodes\\" (\\"Id\\",\\"Name\\",\\"IpAddress\\",\\"SshPort\\",\\"ControlPort\\",\\"SshUsername\\",\\"SshPassword\\",\\"AuthType\\",\\"OsType\\",\\"Region\\",\\"Status\\",\\"ConnectionState\\",\\"ConnectionTimeoutSeconds\\",\\"CpuPercent\\",\\"RamPercent\\",\\"DiskPercent\\",\\"RamUsedGb\\",\\"StorageUsedGb\\",\\"PingMs\\",\\"ActiveSessions\\",\\"CreatedAtUtc\\") VALUES (gen_random_uuid(),'VPS-PROD-01','82.223.9.98',22,9001,'root','','Password','Ubuntu','EU','Pending','Connected',5,0,0,0,0,0,0,0,NOW());" """, "DB INSERT")
+        run(f"""sudo -u postgres psql -d FleetManagerDb -c "INSERT INTO \\"VpsNodes\\" (\\"Id\\",\\"Name\\",\\"IpAddress\\",\\"SshPort\\",\\"ControlPort\\",\\"SshUsername\\",\\"SshPassword\\",\\"AuthType\\",\\"OsType\\",\\"Region\\",\\"Status\\",\\"ConnectionState\\",\\"ConnectionTimeoutSeconds\\",\\"CpuPercent\\",\\"RamPercent\\",\\"DiskPercent\\",\\"RamUsedGb\\",\\"StorageUsedGb\\",\\"PingMs\\",\\"ActiveSessions\\",\\"CreatedAtUtc\\") VALUES (gen_random_uuid(),'VPS-PROD-01','{host}',22,9001,'root','','Password','Ubuntu','EU','Pending','Connected',5,0,0,0,0,0,0,0,NOW());" """, "DB INSERT")
         result = run("""sudo -u postgres psql -d FleetManagerDb -t -c 'SELECT "Id" FROM "VpsNodes" LIMIT 1;'""")
         node_id = result.strip()
         print(f"Node ID from DB: {node_id}")
