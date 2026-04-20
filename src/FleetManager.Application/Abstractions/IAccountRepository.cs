@@ -9,5 +9,6 @@ public interface IAccountRepository
     Task<Account?> GetTrackedByIdAsync(Guid accountId, CancellationToken cancellationToken = default);
     Task AddAsync(Account account, CancellationToken cancellationToken = default);
     void Remove(Account account);
+    Task DeleteGraphAsync(Account account, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

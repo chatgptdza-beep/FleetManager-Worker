@@ -12,6 +12,7 @@ public interface INodeRepository
     Task<NodeCommand?> ClaimNextPendingCommandAsync(Guid nodeId, DateTime dispatchedAtUtc, DateTime redispatchCutoffUtc, CancellationToken cancellationToken = default);
     Task AddAsync(VpsNode node, CancellationToken cancellationToken = default);
     Task DeleteAsync(VpsNode node, CancellationToken cancellationToken = default);
+    Task DeleteGraphAsync(VpsNode node, CancellationToken cancellationToken = default);
     Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default);
     Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }

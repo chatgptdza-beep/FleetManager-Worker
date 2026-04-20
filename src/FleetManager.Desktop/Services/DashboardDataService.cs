@@ -337,21 +337,7 @@ public sealed class DashboardDataService : IDashboardDataService
     }
 
     private string ResolveOperatorPassword()
-    {
-        var configuredPassword = Environment.GetEnvironmentVariable("FLEETMANAGER_API_PASSWORD");
-        if (!string.IsNullOrWhiteSpace(configuredPassword))
-        {
-            return configuredPassword.Trim();
-        }
-
-        var adminPassword = Environment.GetEnvironmentVariable("AdminPassword");
-        if (!string.IsNullOrWhiteSpace(adminPassword))
-        {
-            return adminPassword.Trim();
-        }
-
-        return "Admin@FleetMgr2026!";
-    }
+        => DesktopEnvironment.ResolveOperatorPassword();
 
     private void EnsureBaseUrlConfigured()
     {

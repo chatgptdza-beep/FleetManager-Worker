@@ -74,7 +74,7 @@ public sealed class NodeService(INodeRepository nodeRepository) : INodeService
         var node = await nodeRepository.GetByIdAsync(nodeId, cancellationToken);
         if (node is null) return false;
 
-        await nodeRepository.DeleteAsync(node, cancellationToken);
+        await nodeRepository.DeleteGraphAsync(node, cancellationToken);
         await nodeRepository.SaveChangesAsync(cancellationToken);
         return true;
     }

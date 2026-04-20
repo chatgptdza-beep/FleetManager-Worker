@@ -253,8 +253,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
             node.AuthType = authType.Trim();
             node.ControlPort = controlPort;
             node.Region = string.IsNullOrWhiteSpace(region) ? null : region.Trim();
-            node.EncryptedSshPassword = DesktopCredentialProtector.Protect(sshPassword);
-            node.EncryptedSshPrivateKey = DesktopCredentialProtector.Protect(sshPrivateKey);
+            ApplyStoredCredentials(node, sshPassword, sshPrivateKey);
 
             await SaveSnapshotUnsafeAsync(snapshot, cancellationToken);
             return Clone(node);
@@ -324,6 +323,11 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         target.OsType = remoteNode.OsType;
         target.Region = remoteNode.Region;
         target.LastKnownApiBaseUrl = NormalizeApiBaseUrl(apiBaseUrl);
+        if (!DesktopEnvironment.ShouldPersistSshCredentials())
+        {
+            target.EncryptedSshPassword = null;
+            target.EncryptedSshPrivateKey = null;
+        }
     }
 
     private static void ApplyConnectionRequest(DesktopManagedNodeRecord target, CreateNodeRequest request)
@@ -335,8 +339,20 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         target.ControlPort = request.ControlPort;
         target.OsType = request.OsType.Trim();
         target.Region = string.IsNullOrWhiteSpace(request.Region) ? null : request.Region.Trim();
-        target.EncryptedSshPassword = DesktopCredentialProtector.Protect(request.SshPassword);
-        target.EncryptedSshPrivateKey = DesktopCredentialProtector.Protect(request.SshPrivateKey);
+        ApplyStoredCredentials(target, request.SshPassword, request.SshPrivateKey);
+    }
+
+    private static void ApplyStoredCredentials(DesktopManagedNodeRecord target, string? sshPassword, string? sshPrivateKey)
+    {
+        if (!DesktopEnvironment.ShouldPersistSshCredentials())
+        {
+            target.EncryptedSshPassword = null;
+            target.EncryptedSshPrivateKey = null;
+            return;
+        }
+
+        target.EncryptedSshPassword = DesktopCredentialProtector.Protect(sshPassword);
+        target.EncryptedSshPrivateKey = DesktopCredentialProtector.Protect(sshPrivateKey);
     }
 
     private static void Upsert(List<DesktopManagedNodeRecord> nodes, DesktopManagedNodeRecord candidate)

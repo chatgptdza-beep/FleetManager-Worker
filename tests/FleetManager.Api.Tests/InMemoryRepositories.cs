@@ -55,6 +55,9 @@ internal sealed class InMemoryNodeRepository : INodeRepository
         return Task.CompletedTask;
     }
 
+    public Task DeleteGraphAsync(VpsNode node, CancellationToken cancellationToken = default)
+        => DeleteAsync(node, cancellationToken);
+
     public Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default)
     {
         var node = Nodes.FirstOrDefault(candidate => candidate.Id == command.VpsNodeId);
@@ -122,6 +125,12 @@ internal sealed class InMemoryAccountRepository : IAccountRepository
     {
         Accounts.Remove(account);
         account.VpsNode?.Accounts.Remove(account);
+    }
+
+    public Task DeleteGraphAsync(Account account, CancellationToken cancellationToken = default)
+    {
+        Remove(account);
+        return Task.CompletedTask;
     }
 
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)

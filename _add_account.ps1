@@ -1,8 +1,26 @@
-$b = 'http://localhost:5000'
-$t = (Invoke-RestMethod -Uri "$b/api/auth/token" -Method Post -ContentType 'application/json' -Body '{"password":"Admin@FleetMgr2026!"}').token
+[CmdletBinding()]
+param(
+    [string]$ApiBaseUrl = 'http://localhost:5000',
+    [string]$AdminPassword = 'FleetManager-DevOnly-ChangeMe!',
+    [Parameter(Mandatory = $true)]
+    [string]$NodeId,
+    [Parameter(Mandatory = $true)]
+    [string]$Email,
+    [Parameter(Mandatory = $true)]
+    [string]$Username,
+    [string]$Status = 'Stable'
+)
+
+$t = (Invoke-RestMethod -Uri "$ApiBaseUrl/api/auth/token" -Method Post -ContentType 'application/json' -Body (@{ password = $AdminPassword } | ConvertTo-Json)).token
 $h = @{ Authorization = "Bearer $t" }
-$body = '{"nodeId":"1b43bdb5-93c0-4b29-8c14-fb6ccd0d1905","email":"fayssalb28@gmail.com","username":"fayssaldz","status":"Stable"}'
-$a = Invoke-RestMethod -Uri "$b/api/accounts" -Method Post -Headers $h -ContentType 'application/json' -Body $body
+$body = @{
+    nodeId = $NodeId
+    email = $Email
+    username = $Username
+    status = $Status
+} | ConvertTo-Json
+
+$a = Invoke-RestMethod -Uri "$ApiBaseUrl/api/accounts" -Method Post -Headers $h -ContentType 'application/json' -Body $body
 Write-Host "Account ID: $($a.id)"
 Write-Host "Email: $($a.email)"
 Write-Host "Username: $($a.username)"

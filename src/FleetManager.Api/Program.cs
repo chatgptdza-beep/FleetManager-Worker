@@ -5,6 +5,7 @@ using FleetManager.Api.Hubs;
 using FleetManager.Api.Services;
 using FleetManager.Application.Abstractions;
 using FleetManager.Contracts.Agent;
+using FleetManager.Contracts.Configuration;
 using FleetManager.Infrastructure;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -46,12 +47,12 @@ var adminPassword = ResolveSecret(
     builder.Configuration,
     builder.Environment,
     "AdminPassword",
-    fallbackDevelopmentValue: "Admin@FleetMgr2026!");
+    fallbackDevelopmentValue: FleetManagerDevDefaults.AdminPassword);
 var agentApiKey = ResolveSecret(
     builder.Configuration,
     builder.Environment,
     "AgentApiKey",
-    fallbackDevelopmentValue: "MASTER-KEY-12345",
+    fallbackDevelopmentValue: FleetManagerDevDefaults.AgentApiKey,
     "Agent:ApiKey");
 var encodedKey = Encoding.UTF8.GetBytes(jwtKey);
 var corsOrigins = builder.Configuration

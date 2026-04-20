@@ -3,10 +3,12 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FleetManager.Contracts.Accounts;
+using FleetManager.Contracts.Configuration;
 using FleetManager.Contracts.Operations;
 using FleetManager.Domain.Entities;
 using FleetManager.Domain.Enums;
 using FleetManager.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -29,7 +31,7 @@ public sealed class ApiIntegrationTests(ApiWebApplicationFactory factory) : ICla
     {
         using var client = factory.CreateClient();
 
-        using var response = await client.PostAsJsonAsync("/api/auth/token", new { password = "Admin@FleetMgr2026!" });
+        using var response = await client.PostAsJsonAsync("/api/auth/token", new { password = FleetManagerDevDefaults.AdminPassword });
         response.EnsureSuccessStatusCode();
 
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -362,9 +364,89 @@ public sealed class ApiIntegrationTests(ApiWebApplicationFactory factory) : ICla
         Assert.Equal("Desktop rotate", rotation.Reason);
     }
 
+    [Fact]
+    public async Task Delete_account_endpoint_purges_worker_events_and_account_commands()
+    {
+        var accountId = await SeedAccountAsync(withProxies: true);
+
+        using (var machineClient = factory.CreateClient())
+        {
+            machineClient.DefaultRequestHeaders.Add("X-Api-Key", "TEST-AGENT-KEY");
+            using var manualResponse = await machineClient.PostAsJsonAsync(
+                $"/api/accounts/{accountId}/manual-required",
+                new { vncUrl = "http://10.0.0.21:9001/vnc.html" });
+            manualResponse.EnsureSuccessStatusCode();
+        }
+
+        using var operatorClient = factory.CreateClient();
+        operatorClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(operatorClient));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var account = await dbContext.Accounts.AsNoTracking().FirstAsync(candidate => candidate.Id == accountId);
+        dbContext.NodeCommands.Add(new NodeCommand
+        {
+            VpsNodeId = account.VpsNodeId,
+            CommandType = NodeCommandType.StartAutomation,
+            PayloadJson = $$"""{"accountId":"{{accountId}}"}""",
+            Status = CommandStatus.Pending
+        });
+        await dbContext.SaveChangesAsync();
+
+        using var deleteResponse = await operatorClient.DeleteAsync($"/api/accounts/{accountId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        Assert.DoesNotContain(dbContext.Accounts, candidate => candidate.Id == accountId);
+        Assert.DoesNotContain(dbContext.WorkerInboxEvents, candidate => candidate.AccountId == accountId);
+        Assert.DoesNotContain(dbContext.NodeCommands, candidate => candidate.PayloadJson.Contains(accountId.ToString(), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Delete_node_endpoint_purges_associated_accounts_worker_events_and_capabilities()
+    {
+        var accountId = await SeedAccountAsync(withProxies: false);
+
+        using var operatorClient = factory.CreateClient();
+        operatorClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetTokenAsync(operatorClient));
+
+        using var scope = factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var account = await dbContext.Accounts.AsNoTracking().FirstAsync(candidate => candidate.Id == accountId);
+        var nodeId = account.VpsNodeId;
+
+        dbContext.WorkerInboxEvents.Add(new WorkerInboxEvent
+        {
+            AccountId = accountId,
+            VpsNodeId = nodeId,
+            EventType = WorkerInboxEventType.CommandFailed,
+            Status = WorkerInboxEventStatus.Pending,
+            Title = "Command failed",
+            Message = "Synthetic failure for delete test."
+        });
+        dbContext.NodeCapabilities.Add(new NodeCapability
+        {
+            VpsNodeId = nodeId,
+            CanStartBrowser = true,
+            CanStopBrowser = true,
+            CanRestartBrowser = true,
+            CanCaptureScreenshot = true,
+            CanFetchLogs = true,
+            CanUpdateAgent = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        using var deleteResponse = await operatorClient.DeleteAsync($"/api/nodes/{nodeId}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        Assert.DoesNotContain(dbContext.VpsNodes, candidate => candidate.Id == nodeId);
+        Assert.DoesNotContain(dbContext.Accounts, candidate => candidate.VpsNodeId == nodeId);
+        Assert.DoesNotContain(dbContext.WorkerInboxEvents, candidate => candidate.VpsNodeId == nodeId || candidate.AccountId == accountId);
+        Assert.DoesNotContain(dbContext.NodeCapabilities, candidate => candidate.VpsNodeId == nodeId);
+    }
+
     private static async Task<string> GetTokenAsync(HttpClient client)
     {
-        using var response = await client.PostAsJsonAsync("/api/auth/token", new { password = "Admin@FleetMgr2026!" });
+        using var response = await client.PostAsJsonAsync("/api/auth/token", new { password = FleetManagerDevDefaults.AdminPassword });
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
         return payload.GetProperty("token").GetString() ?? throw new InvalidOperationException("Token was empty.");

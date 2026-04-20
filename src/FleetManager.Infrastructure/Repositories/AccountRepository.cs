@@ -51,6 +51,29 @@ public sealed class AccountRepository(AppDbContext dbContext) : IAccountReposito
     public void Remove(Account account)
         => dbContext.Accounts.Remove(account);
 
+    public async Task DeleteGraphAsync(Account account, CancellationToken cancellationToken = default)
+    {
+        var accountIdText = account.Id.ToString();
+
+        var relatedWorkerEvents = await dbContext.WorkerInboxEvents
+            .Where(workerEvent => workerEvent.AccountId == account.Id)
+            .ToListAsync(cancellationToken);
+        if (relatedWorkerEvents.Count > 0)
+        {
+            dbContext.WorkerInboxEvents.RemoveRange(relatedWorkerEvents);
+        }
+
+        var relatedCommands = await dbContext.NodeCommands
+            .Where(command => command.PayloadJson.Contains(accountIdText))
+            .ToListAsync(cancellationToken);
+        if (relatedCommands.Count > 0)
+        {
+            dbContext.NodeCommands.RemoveRange(relatedCommands);
+        }
+
+        dbContext.Accounts.Remove(account);
+    }
+
     public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         => dbContext.SaveChangesAsync(cancellationToken);
 }

@@ -49,8 +49,15 @@ Desktop-specific overrides:
 $env:FLEETMANAGER_API_BASE_URL = "http://localhost:5188/"
 $env:FLEETMANAGER_API_PASSWORD = "<operator password>"
 $env:FLEETMANAGER_AGENT_API_KEY = "<agent api key>"
+$env:FLEETMANAGER_STORE_SSH_CREDENTIALS = "false"
 $env:FLEETMANAGER_DESKTOP_DEMO_MODE = "false"
 ```
+
+Notes:
+
+- `FLEETMANAGER_STORE_SSH_CREDENTIALS` is now opt-in. When it is left unset or `false`, the Desktop will not persist SSH passwords or private keys inside `desktop.nodes.json`.
+- The Desktop runtime state file stores only UI state such as API base URL, selected node, and search text. It does not store the operator password or agent API key.
+- Development fallbacks are neutral placeholders only. Production deployments should override `AdminPassword` and `AgentApiKey`.
 
 ### Build and test
 
@@ -165,7 +172,7 @@ Use the automation script below when adding a new VPS so extension setup is repr
 
 ```powershell
 .\scripts\setup-vps-extension-and-launcher-bridge.ps1 `
-  -VpsIp 89.116.26.182 `
+  -VpsIp <vps-ip> `
   -RootPassword '<root-password>' `
   -LocalExtensionPath 'C:\Users\<you>\Desktop\QuickReserve\QuickReserve Loader' `
   -StartLauncherTunnel

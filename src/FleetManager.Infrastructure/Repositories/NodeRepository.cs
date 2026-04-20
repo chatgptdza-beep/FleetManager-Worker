@@ -90,6 +90,38 @@ FOR UPDATE SKIP LOCKED")
         return Task.CompletedTask;
     }
 
+    public async Task DeleteGraphAsync(VpsNode node, CancellationToken cancellationToken = default)
+    {
+        var accountIds = node.Accounts
+            .Select(account => account.Id)
+            .ToList();
+
+        var relatedWorkerEvents = await dbContext.WorkerInboxEvents
+            .Where(workerEvent =>
+                workerEvent.VpsNodeId == node.Id
+                || (workerEvent.AccountId.HasValue && accountIds.Contains(workerEvent.AccountId.Value)))
+            .ToListAsync(cancellationToken);
+        if (relatedWorkerEvents.Count > 0)
+        {
+            dbContext.WorkerInboxEvents.RemoveRange(relatedWorkerEvents);
+        }
+
+        var relatedCapabilities = await dbContext.NodeCapabilities
+            .Where(capability => capability.VpsNodeId == node.Id)
+            .ToListAsync(cancellationToken);
+        if (relatedCapabilities.Count > 0)
+        {
+            dbContext.NodeCapabilities.RemoveRange(relatedCapabilities);
+        }
+
+        if (node.Accounts.Count > 0)
+        {
+            dbContext.Accounts.RemoveRange(node.Accounts);
+        }
+
+        dbContext.VpsNodes.Remove(node);
+    }
+
     public async Task AddCommandAsync(NodeCommand command, CancellationToken cancellationToken = default)
         => await dbContext.NodeCommands.AddAsync(command, cancellationToken);
 

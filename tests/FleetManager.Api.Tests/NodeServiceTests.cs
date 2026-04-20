@@ -137,4 +137,18 @@ public sealed class NodeServiceTests
         Assert.Equal("Executed", status.Status);
         Assert.Equal(nodeCommand.ResultMessage, status.ResultMessage);
     }
+
+    [Fact]
+    public async Task DeleteNodeAsync_removes_node()
+    {
+        var repository = new InMemoryNodeRepository();
+        var node = new VpsNode { Name = "VPS-01", IpAddress = "10.0.0.10" };
+        repository.Nodes.Add(node);
+        var service = new NodeService(repository);
+
+        var deleted = await service.DeleteNodeAsync(node.Id);
+
+        Assert.True(deleted);
+        Assert.Empty(repository.Nodes);
+    }
 }

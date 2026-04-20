@@ -80,7 +80,7 @@ public sealed class AccountService(IAccountRepository accountRepository, INodeRe
             return false;
         }
 
-        accountRepository.Remove(account);
+        await accountRepository.DeleteGraphAsync(account, cancellationToken);
         await accountRepository.SaveChangesAsync(cancellationToken);
         return true;
     }

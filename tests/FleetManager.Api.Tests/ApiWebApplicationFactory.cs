@@ -1,4 +1,5 @@
 using FleetManager.Infrastructure.Persistence;
+using FleetManager.Contracts.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -18,13 +19,13 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", TestConnectionString);
         Environment.SetEnvironmentVariable("Jwt__Key", "12345678901234567890123456789012");
-        Environment.SetEnvironmentVariable("AdminPassword", "Admin@FleetMgr2026!");
+        Environment.SetEnvironmentVariable("AdminPassword", FleetManagerDevDefaults.AdminPassword);
         Environment.SetEnvironmentVariable("AgentApiKey", "TEST-AGENT-KEY");
 
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:DefaultConnection", TestConnectionString);
         builder.UseSetting("Jwt:Key", "12345678901234567890123456789012");
-        builder.UseSetting("AdminPassword", "Admin@FleetMgr2026!");
+        builder.UseSetting("AdminPassword", FleetManagerDevDefaults.AdminPassword);
         builder.UseSetting("AgentApiKey", "TEST-AGENT-KEY");
         builder.UseSetting("DisableRateLimiting", "true");
         builder.ConfigureAppConfiguration((_, configBuilder) =>
@@ -35,7 +36,7 @@ public sealed class ApiWebApplicationFactory : WebApplicationFactory<Program>
                 ["ASPNETCORE_ENVIRONMENT"] = "Development",
                 ["ConnectionStrings:DefaultConnection"] = TestConnectionString,
                 ["Jwt:Key"] = "12345678901234567890123456789012",
-                ["AdminPassword"] = "Admin@FleetMgr2026!",
+                ["AdminPassword"] = FleetManagerDevDefaults.AdminPassword,
                 ["AgentApiKey"] = "TEST-AGENT-KEY"
             });
         });
