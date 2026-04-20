@@ -749,6 +749,29 @@
 
                                             <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
                                                 <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="EDIT API BASE URL" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Use a new API endpoint when moving the project to another PC or starting a fresh VPS fleet." />
+                                                    <Border Margin="0,12,0,0" Height="42" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
+                                                        <TextBox Margin="14,0"
+                                                                 Background="Transparent"
+                                                                 BorderThickness="0"
+                                                                 VerticalContentAlignment="Center"
+                                                                 Foreground="#F8F5F1"
+                                                                 CaretBrush="#F8F5F1"
+                                                                 Text="{Binding ApiBaseUrlInput, UpdateSourceTrigger=PropertyChanged}"
+                                                                 ToolTip="Example: http://203.0.113.10:5000/" />
+                                                    </Border>
+                                                    <WrapPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="ApplyApiBaseUrl_Click" Content="Apply API URL" />
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="ClearApiBaseUrl_Click" Content="Clear API URL" />
+                                                        <Button Margin="0,0,0,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="ResetDesktopState_Click" Content="Reset Local State" Background="#4B2025" BorderBrush="#FFB1B1" Foreground="#FFB1B1" />
+                                                    </WrapPanel>
+                                                    <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Reset Local State clears desktop.runtime.json and desktop.nodes.json on this PC so old VPS and account links do not follow the new deployment." />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
                                                     <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="LOCAL NODE REGISTRY" />
                                                     <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Edit IP addresses, SSH credentials, and manage SSH tunnels for locally-registered VPS nodes." />
                                                     <Button Margin="0,12,0,0" Style="{StaticResource PrimaryButtonStyle}" Height="38" Click="ManageLocalNodes_Click" Content="Open Node Registry" HorizontalContentAlignment="Center" />

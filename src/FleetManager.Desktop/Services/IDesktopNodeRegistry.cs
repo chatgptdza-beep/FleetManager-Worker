@@ -9,6 +9,7 @@ public interface IDesktopNodeRegistry
     Task<IReadOnlyList<DesktopManagedNodeRecord>> GetNodesAsync(CancellationToken cancellationToken = default);
     Task<DesktopManagedNodeRecord?> GetByRemoteNodeIdAsync(Guid remoteNodeId, CancellationToken cancellationToken = default);
     Task<DesktopManagedNodeRecord?> GetByWorkflowNodeIdAsync(Guid workflowNodeId, CancellationToken cancellationToken = default);
+    Task ClearAsync(CancellationToken cancellationToken = default);
     Task<DesktopManagedNodeRecord> UpsertProvisionedNodeAsync(CreateNodeRequest request, NodeSummaryResponse remoteNode, string? apiBaseUrl, CancellationToken cancellationToken = default);
     Task SyncRemoteNodesAsync(IReadOnlyList<NodeSummaryResponse> remoteNodes, string? apiBaseUrl, CancellationToken cancellationToken = default);
     Task SyncTaskDataAsync(IReadOnlyList<AccountSummaryResponse> accounts, CancellationToken cancellationToken = default);

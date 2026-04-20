@@ -37,6 +37,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private AccountCardViewModel? _focusedAccount;
     private string _searchText = string.Empty;
     private string _statusMessage = "Loading dashboard...";
+    private string _apiBaseUrlInput = string.Empty;
     private string _focusedViewerUrl = string.Empty;
     private string _focusedViewerMessage = "Request a viewer session to see the viewer URL here.";
     private bool _showWorkerInboxHistory;
@@ -151,6 +152,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public string ApiBaseUrlInput
+    {
+        get => _apiBaseUrlInput;
+        set => SetProperty(ref _apiBaseUrlInput, value);
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -259,6 +266,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         _dataService = dataService;
         _sshProvisioningService = sshProvisioningService;
         _nodeRegistry = nodeRegistry;
+        _apiBaseUrlInput = _dataService.CurrentBaseUrl;
     }
 
     /// <summary>Exposes the data service for use in code-behind (e.g. RemoteTakeoverWindow).</summary>
@@ -276,9 +284,22 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await ReloadAsync();
-        await TryConnectSignalRAsync();
-        await PersistDesktopRuntimeStateAsync();
+        try
+        {
+            await ReloadAsync();
+            await TryConnectSignalRAsync();
+            await PersistDesktopRuntimeStateAsync();
+        }
+        catch (Exception ex) when (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL")))
+        {
+            await DisconnectSignalRAsync();
+            ClearConfiguredApiBaseUrl();
+            ResetDashboardCollections();
+            SignalRStatusLabel = "Not configured";
+            await PersistDesktopRuntimeStateAsync();
+            StatusMessage = $"Saved API endpoint was unreachable and has been cleared. Add a VPS or enter a new API URL. Details: {ex.Message}";
+            NotifyDashboardPropertiesChanged();
+        }
     }
 
     public async Task ReloadAsync(Guid? preferredNodeId = null, Guid? preferredAccountId = null)
@@ -635,6 +656,23 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            if (_dataService.HasConfiguredBaseUrl)
+            {
+                var currentApiProbe = await ProbeApiEndpointAsync(_dataService.CurrentBaseUrl, cancellationToken);
+                if (!currentApiProbe.IsReachable)
+                {
+                    installProgress?.Report(
+                        $"Configured API {_dataService.CurrentBaseUrl} is unreachable ({currentApiProbe.Detail}). " +
+                        "Promoting the entered VPS as the new primary API...");
+                    await DisconnectSignalRAsync();
+                    ClearConfiguredApiBaseUrl();
+                    await PersistDesktopRuntimeStateAsync();
+                    await EnsurePrimaryApiOnEnteredNodeAsync(request, installProgress, cancellationToken);
+                    installProgress?.Report("Retrying node registration with the new primary API...");
+                    return await _dataService.CreateNodeAsync(request, cancellationToken);
+                }
+            }
+
             if (!ShouldTryNodeApiFallback(request.IpAddress))
             {
                 throw;
@@ -688,7 +726,7 @@ public sealed class MainWindowViewModel : ViewModelBase
             return false;
         }
 
-        _dataService.ConfigureBaseUrl(candidateApiBase);
+        SetConfiguredApiBaseUrl(candidateApiBase);
         installProgress?.Report($"Switched desktop API to {candidateApiBase}");
 
         try
@@ -700,7 +738,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception switchEx)
         {
-            _dataService.ConfigureBaseUrl(previousApiBase);
+            SetConfiguredApiBaseUrl(previousApiBase);
             await PersistDesktopRuntimeStateAsync();
             installProgress?.Report($"Auto-switch failed: {switchEx.Message}");
             return false;
@@ -763,7 +801,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IProgress<string>? installProgress,
         CancellationToken cancellationToken)
     {
-        _dataService.ConfigureBaseUrl(candidateApiBase);
+        SetConfiguredApiBaseUrl(candidateApiBase);
 
         try
         {
@@ -774,7 +812,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (Exception apiEx)
         {
-            _dataService.ClearBaseUrl();
+            ClearConfiguredApiBaseUrl();
             await PersistDesktopRuntimeStateAsync();
             installProgress?.Report($"Primary API auth failed: {apiEx.Message}");
             return false;
@@ -1087,11 +1125,70 @@ public sealed class MainWindowViewModel : ViewModelBase
         var snapshot = JsonSerializer.Deserialize<DesktopConfigSnapshot>(json)
             ?? throw new InvalidOperationException("Desktop config is invalid.");
 
-        _dataService.ConfigureBaseUrl(snapshot.ApiBaseUrl);
         SearchText = snapshot.SearchText ?? string.Empty;
-        await DesktopRuntimeStateStore.SaveAsync(snapshot);
-        await ReloadAsync(snapshot.SelectedNodeId);
+
+        if (string.IsNullOrWhiteSpace(snapshot.ApiBaseUrl))
+        {
+            await ClearApiBaseUrlAsync();
+        }
+        else
+        {
+            ApiBaseUrlInput = snapshot.ApiBaseUrl;
+            await ApplyApiBaseUrlAsync();
+            await DesktopRuntimeStateStore.SaveAsync(snapshot);
+            await ReloadAsync(snapshot.SelectedNodeId);
+        }
+
         StatusMessage = $"Loaded desktop config from {Path.GetFileName(path)} | {SourceBanner}";
+    }
+
+    public async Task ApplyApiBaseUrlAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(ApiBaseUrlInput))
+        {
+            throw new InvalidOperationException("Enter an API base URL first, for example http://203.0.113.10:5000/.");
+        }
+
+        var previousBaseUrl = _dataService.HasConfiguredBaseUrl ? _dataService.CurrentBaseUrl : null;
+        await DisconnectSignalRAsync();
+
+        try
+        {
+            SetConfiguredApiBaseUrl(ApiBaseUrlInput);
+            await ReloadAsync();
+            await TryConnectSignalRAsync();
+            await PersistDesktopRuntimeStateAsync();
+            StatusMessage = $"API base URL updated to {_dataService.CurrentBaseUrl}";
+        }
+        catch
+        {
+            await RestorePreviousApiBaseUrlAsync(previousBaseUrl, cancellationToken);
+            throw;
+        }
+    }
+
+    public async Task ClearApiBaseUrlAsync()
+    {
+        await DisconnectSignalRAsync();
+        ClearConfiguredApiBaseUrl();
+        ResetDashboardCollections();
+        SignalRStatusLabel = "Not configured";
+        await PersistDesktopRuntimeStateAsync();
+        StatusMessage = "API connection cleared. Add a VPS or enter a new API URL.";
+        NotifyDashboardPropertiesChanged();
+    }
+
+    public async Task ResetLocalDesktopStateAsync(CancellationToken cancellationToken = default)
+    {
+        await DisconnectSignalRAsync();
+        ClearConfiguredApiBaseUrl();
+        ResetDashboardCollections();
+        SearchText = string.Empty;
+        SignalRStatusLabel = "Not configured";
+        await _nodeRegistry.ClearAsync(cancellationToken);
+        await DesktopRuntimeStateStore.DeleteAsync(cancellationToken);
+        StatusMessage = "Local desktop state was reset. Add a new VPS to start a fresh environment.";
+        NotifyDashboardPropertiesChanged();
     }
 
     private DesktopConfigSnapshot CreateDesktopConfigSnapshot()
@@ -1106,23 +1203,26 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("FLEETMANAGER_API_BASE_URL")))
         {
+            SyncApiBaseUrlInput();
             return;
         }
 
         var snapshot = await DesktopRuntimeStateStore.TryLoadAsync();
         if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.ApiBaseUrl))
         {
+            SearchText = snapshot?.SearchText ?? string.Empty;
+            SyncApiBaseUrlInput();
             return;
         }
 
         try
         {
-            _dataService.ConfigureBaseUrl(snapshot.ApiBaseUrl);
+            SetConfiguredApiBaseUrl(snapshot.ApiBaseUrl);
             SearchText = snapshot.SearchText ?? string.Empty;
         }
         catch
         {
-            _dataService.ClearBaseUrl();
+            ClearConfiguredApiBaseUrl();
             SearchText = snapshot.SearchText ?? string.Empty;
             await DesktopRuntimeStateStore.SaveAsync(CreateDesktopConfigSnapshot());
         }
@@ -1130,6 +1230,49 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private Task PersistDesktopRuntimeStateAsync()
         => DesktopRuntimeStateStore.SaveAsync(CreateDesktopConfigSnapshot());
+
+    private void SetConfiguredApiBaseUrl(string baseUrl)
+    {
+        _dataService.ConfigureBaseUrl(baseUrl);
+        SyncApiBaseUrlInput();
+    }
+
+    private void ClearConfiguredApiBaseUrl()
+    {
+        _dataService.ClearBaseUrl();
+        SyncApiBaseUrlInput();
+    }
+
+    private void SyncApiBaseUrlInput()
+    {
+        ApiBaseUrlInput = _dataService.CurrentBaseUrl;
+    }
+
+    private async Task RestorePreviousApiBaseUrlAsync(string? previousBaseUrl, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(previousBaseUrl))
+        {
+            try
+            {
+                SetConfiguredApiBaseUrl(previousBaseUrl);
+                await ReloadAsync();
+                await TryConnectSignalRAsync();
+                await PersistDesktopRuntimeStateAsync();
+                StatusMessage = $"Restored previous API endpoint {previousBaseUrl}";
+                return;
+            }
+            catch
+            {
+                // Fall back to a fully cleared desktop state below.
+            }
+        }
+
+        ClearConfiguredApiBaseUrl();
+        ResetDashboardCollections();
+        SignalRStatusLabel = "Not configured";
+        await PersistDesktopRuntimeStateAsync();
+        NotifyDashboardPropertiesChanged();
+    }
 
     public async Task ExportVisibleAccountsCsvAsync(string path)
     {

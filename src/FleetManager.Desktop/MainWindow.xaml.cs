@@ -592,6 +592,41 @@ public partial class MainWindow : Window
         registryWindow.ShowDialog();
     }
 
+    private async void ApplyApiBaseUrl_Click(object sender, RoutedEventArgs e)
+    {
+        await RunUiActionAsync(() => _viewModel.ApplyApiBaseUrlAsync());
+    }
+
+    private async void ClearApiBaseUrl_Click(object sender, RoutedEventArgs e)
+    {
+        var confirmed = MessageBox.Show(
+            this,
+            "Clear the saved API endpoint for this desktop?\n\nYou can still add a fresh VPS afterwards and it will become the new primary API.",
+            "FleetManager",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmed == MessageBoxResult.Yes)
+        {
+            await RunUiActionAsync(() => _viewModel.ClearApiBaseUrlAsync());
+        }
+    }
+
+    private async void ResetDesktopState_Click(object sender, RoutedEventArgs e)
+    {
+        var confirmed = MessageBox.Show(
+            this,
+            "Reset the local desktop state?\n\nThis deletes the saved API endpoint and the local node registry on this PC so you can start from scratch.",
+            "FleetManager",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (confirmed == MessageBoxResult.Yes)
+        {
+            await RunUiActionAsync(() => _viewModel.ResetLocalDesktopStateAsync());
+        }
+    }
+
     private async Task RunUiActionAsync(Func<Task> action)
     {
         try

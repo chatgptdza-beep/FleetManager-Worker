@@ -70,6 +70,22 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         }
     }
 
+    public async Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        await _syncLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (File.Exists(RegistryFilePath))
+            {
+                File.Delete(RegistryFilePath);
+            }
+        }
+        finally
+        {
+            _syncLock.Release();
+        }
+    }
+
     public async Task<DesktopManagedNodeRecord> UpsertProvisionedNodeAsync(CreateNodeRequest request, NodeSummaryResponse remoteNode, string? apiBaseUrl, CancellationToken cancellationToken = default)
     {
         await _syncLock.WaitAsync(cancellationToken);

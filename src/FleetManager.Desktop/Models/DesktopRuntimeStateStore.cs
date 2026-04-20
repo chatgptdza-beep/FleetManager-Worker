@@ -32,4 +32,14 @@ public static class DesktopRuntimeStateStore
         var json = JsonSerializer.Serialize(snapshot, JsonOptions);
         await File.WriteAllTextAsync(StateFilePath, json, cancellationToken);
     }
+
+    public static Task DeleteAsync(CancellationToken cancellationToken = default)
+    {
+        if (File.Exists(StateFilePath))
+        {
+            File.Delete(StateFilePath);
+        }
+
+        return Task.CompletedTask;
+    }
 }
