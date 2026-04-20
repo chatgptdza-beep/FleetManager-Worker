@@ -607,7 +607,7 @@ public class SshProvisioningService : ISshProvisioningService
 
     private static void UploadTextFile(SftpClient client, string remotePath, string content)
     {
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(NormalizeForLinuxText(content)));
         client.UploadFile(stream, remotePath, true);
     }
 
@@ -768,7 +768,7 @@ public class SshProvisioningService : ISshProvisioningService
 
     private static string BuildElevatedCommand(CreateNodeRequest request, string command)
     {
-        var safeCommand = "set -euo pipefail\n" + command;
+        var safeCommand = NormalizeForLinuxText("set -euo pipefail\n" + command);
 
         if (string.Equals(request.SshUsername, "root", StringComparison.OrdinalIgnoreCase))
         {
@@ -788,6 +788,10 @@ public class SshProvisioningService : ISshProvisioningService
 
     private static string Quote(string value)
         => $"'{value.Replace("'", "'\"'\"'")}'";
+
+    private static string NormalizeForLinuxText(string value)
+        => value.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
 
     private static ConnectionInfo CreateConnectionInfo(CreateNodeRequest request)
     {
