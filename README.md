@@ -58,6 +58,7 @@ Notes:
 - `FLEETMANAGER_STORE_SSH_CREDENTIALS` is now opt-in. When it is left unset or `false`, the Desktop will not persist SSH passwords or private keys inside `desktop.nodes.json`.
 - The Desktop runtime state file stores only UI state such as API base URL, selected node, and search text. It does not store the operator password or agent API key.
 - Development fallbacks are neutral placeholders only. Production deployments should override `AdminPassword` and `AgentApiKey`.
+- When the Desktop provisions the first VPS as the primary API server and no prebuilt API bundle is found, it now runs `dotnet publish` for `FleetManager.Api` automatically and reuses the generated `out/api` publish folder.
 
 ### Build and test
 
@@ -225,6 +226,7 @@ The Linux service now launches through `/opt/fleetmanager-agent/run-agent.sh`, w
 - Worker-side manual takeover requests are stored as active alerts with the VNC URL, so reopening the Desktop restores those pending interactions instead of losing them.
 - Proxy rotations and worker command failures are also queued in the API worker inbox until the operator acknowledges them from the Desktop.
 - Completing a manual takeover now clears the pending alert and returns the account to `Stable`, ready for the next operator command.
+- The Desktop self-healing loop now also checks the API heartbeat freshness for registered nodes. If SSH is reachable but the worker heartbeat is stale or missing, the Desktop automatically reinstalls and reconfigures the worker, provided SSH credentials are available in the local node registry.
 
 ## Security Notes
 

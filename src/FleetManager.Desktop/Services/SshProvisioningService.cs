@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -29,6 +30,9 @@ public class SshProvisioningService : ISshProvisioningService
     private const string ApiSystemUser = "fleetmgr";
     private const string ApiDatabaseName = "FleetManagerDb";
     private const string ApiDatabaseUser = "fleetmgr";
+    private const string ApiProjectRelativePath = "src/FleetManager.Api/FleetManager.Api.csproj";
+    private const string ApiAutoPublishRelativePath = "out/api";
+    private const string LinuxRuntimeIdentifier = "linux-x64";
 
     public async Task<bool> TestConnectionAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
     {
@@ -145,7 +149,8 @@ public class SshProvisioningService : ISshProvisioningService
 
     public async Task InstallApiAsync(CreateNodeRequest request, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        var (localBundlePath, deleteAfterUse) = ResolveApiBundlePath();
+        progress?.Report("[API local] Resolving FleetManager.Api publish bundle...");
+        var (localBundlePath, deleteAfterUse) = await ResolveApiBundlePathAsync(progress, cancellationToken);
         var databasePassword = ResolveDatabasePassword();
         var apiConfigJson = BuildApiAppSettingsJson(databasePassword);
         var apiServiceFile = BuildApiServiceFile();
@@ -360,7 +365,9 @@ public class SshProvisioningService : ISshProvisioningService
         }, cancellationToken);
     }
 
-    private static (string bundlePath, bool deleteAfterUse) ResolveApiBundlePath()
+    private static async Task<(string bundlePath, bool deleteAfterUse)> ResolveApiBundlePathAsync(
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         var explicitBundlePath = Environment.GetEnvironmentVariable("FLEETMANAGER_API_BUNDLE_PATH");
         if (!string.IsNullOrWhiteSpace(explicitBundlePath))
@@ -376,7 +383,7 @@ public class SshProvisioningService : ISshProvisioningService
             return (normalizedPath, false);
         }
 
-        var publishDirectory = ResolveApiPublishDirectory();
+        var publishDirectory = await ResolveApiPublishDirectoryAsync(progress, cancellationToken);
         var bundlePath = Path.Combine(Path.GetTempPath(), $"fleetmanager-api-bundle-{Guid.NewGuid():N}.zip");
         if (File.Exists(bundlePath))
         {
@@ -387,7 +394,9 @@ public class SshProvisioningService : ISshProvisioningService
         return (bundlePath, true);
     }
 
-    private static string ResolveApiPublishDirectory()
+    private static async Task<string> ResolveApiPublishDirectoryAsync(
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
     {
         var explicitPublishDirectory = Environment.GetEnvironmentVariable("FLEETMANAGER_API_PUBLISH_DIR");
         if (!string.IsNullOrWhiteSpace(explicitPublishDirectory))
@@ -402,21 +411,125 @@ public class SshProvisioningService : ISshProvisioningService
                 "FLEETMANAGER_API_PUBLISH_DIR does not contain FleetManager.Api.");
         }
 
-        var searchRoots = EnumerateSearchRoots().Distinct(StringComparer.OrdinalIgnoreCase);
+        var searchRoots = EnumerateSearchRoots().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         foreach (var root in searchRoots)
         {
-            foreach (var relativePath in new[] { Path.Combine("publish", "api"), Path.Combine("out", "api") })
+            foreach (var relativePath in new[]
+                     {
+                         Path.Combine("publish", "api"),
+                         Path.Combine("out", "api"),
+                         Path.Combine("src", "FleetManager.Api", "bin", "Release", "net8.0", LinuxRuntimeIdentifier, "publish")
+                     })
             {
                 var candidate = Path.Combine(root, relativePath);
                 if (File.Exists(Path.Combine(candidate, "FleetManager.Api")))
                 {
+                    progress?.Report($"[API local] Found existing publish output at {candidate}");
                     return candidate;
                 }
             }
         }
 
+        var apiProjectPath = FindApiProjectPath(searchRoots);
+        if (!string.IsNullOrWhiteSpace(apiProjectPath))
+        {
+            var workspaceRoot = Directory.GetParent(Directory.GetParent(Path.GetDirectoryName(apiProjectPath)!)!.FullName)!.FullName;
+            var autoPublishDirectory = Path.Combine(workspaceRoot, ApiAutoPublishRelativePath);
+            progress?.Report($"[API local] No publish output found. Running dotnet publish for {LinuxRuntimeIdentifier}...");
+            await PublishApiAsync(apiProjectPath, autoPublishDirectory, progress, cancellationToken);
+
+            if (File.Exists(Path.Combine(autoPublishDirectory, "FleetManager.Api")))
+            {
+                progress?.Report($"[API local] Created fresh publish output at {autoPublishDirectory}");
+                return autoPublishDirectory;
+            }
+
+            throw new InvalidOperationException(
+                $"dotnet publish completed but FleetManager.Api was not found in {autoPublishDirectory}.");
+        }
+
         throw new InvalidOperationException(
             "Could not locate FleetManager.Api publish files. Set FLEETMANAGER_API_PUBLISH_DIR or FLEETMANAGER_API_BUNDLE_PATH.");
+    }
+
+    private static string? FindApiProjectPath(IEnumerable<string> searchRoots)
+    {
+        foreach (var root in searchRoots)
+        {
+            var candidate = Path.Combine(root, ApiProjectRelativePath);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task PublishApiAsync(
+        string apiProjectPath,
+        string outputDirectory,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (Directory.Exists(outputDirectory))
+        {
+            Directory.Delete(outputDirectory, recursive: true);
+        }
+
+        Directory.CreateDirectory(outputDirectory);
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            WorkingDirectory = Path.GetDirectoryName(apiProjectPath) ?? Directory.GetCurrentDirectory(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        startInfo.ArgumentList.Add("publish");
+        startInfo.ArgumentList.Add(apiProjectPath);
+        startInfo.ArgumentList.Add("-c");
+        startInfo.ArgumentList.Add("Release");
+        startInfo.ArgumentList.Add("-r");
+        startInfo.ArgumentList.Add(LinuxRuntimeIdentifier);
+        startInfo.ArgumentList.Add("--self-contained");
+        startInfo.ArgumentList.Add("true");
+        startInfo.ArgumentList.Add("-o");
+        startInfo.ArgumentList.Add(outputDirectory);
+
+        using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                progress?.Report($"  > {args.Data}");
+            }
+        };
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                progress?.Report($"  [err] {args.Data}");
+            }
+        };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start dotnet publish for FleetManager.Api.");
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"dotnet publish for FleetManager.Api failed with exit code {process.ExitCode}.");
+        }
     }
 
     private static IEnumerable<string> EnumerateSearchRoots()

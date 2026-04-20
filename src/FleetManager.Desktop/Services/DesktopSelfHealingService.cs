@@ -10,6 +10,8 @@ public sealed class DesktopSelfHealingService(
     ISshTunnelManager tunnelManager) : IDesktopSelfHealingService
 {
     private static readonly TimeSpan HealingInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MaxWorkerHeartbeatAge = TimeSpan.FromMinutes(2);
+
     private readonly SemaphoreSlim _cycleLock = new(1, 1);
     private readonly HttpClient _probeClient = new() { Timeout = TimeSpan.FromSeconds(4) };
     private CancellationTokenSource? _lifetimeCts;
@@ -93,6 +95,8 @@ public sealed class DesktopSelfHealingService(
     private async Task HealNodeAsync(DesktopManagedNodeRecord node, CancellationToken cancellationToken)
     {
         var checkedAtUtc = DateTime.UtcNow;
+        var recoveryReason = "SSH is available. Reinstalling and reconfiguring the worker automatically.";
+
         if (string.IsNullOrWhiteSpace(node.CurrentIp))
         {
             await nodeRegistry.UpdateNodeHealthAsync(
@@ -104,7 +108,6 @@ public sealed class DesktopSelfHealingService(
             return;
         }
 
-        // Check if the SSH tunnel is already active and healthy
         var tunnelState = tunnelManager.GetTunnelState(node.WorkflowNodeId);
         if (tunnelState == TunnelState.Connected
             && node.LocalPort > 0
@@ -113,7 +116,7 @@ public sealed class DesktopSelfHealingService(
             await nodeRegistry.UpdateNodeHealthAsync(
                 node.WorkflowNodeId,
                 DesktopManagedNodeStatus.Connected,
-                $"SSH tunnel active on 127.0.0.1:{node.LocalPort} — API health OK.",
+                $"SSH tunnel active on 127.0.0.1:{node.LocalPort} - API health OK.",
                 checkedAtUtc,
                 healedAtUtc: checkedAtUtc,
                 cancellationToken: cancellationToken);
@@ -149,22 +152,50 @@ public sealed class DesktopSelfHealingService(
 
         if (diagnostic.IsFleetManagerAgentActive || diagnostic.IsFleetManagerApiActive || diagnostic.IsDockerWorkerActive)
         {
-            // Node is reachable — ensure the SSH tunnel is open
-            if (node.HasStoredCredentials
-                && node.LocalPort > 0
-                && tunnelManager.GetTunnelState(node.WorkflowNodeId) != TunnelState.Connected)
+            if (node.RemoteNodeId.HasValue && dashboardDataService.HasConfiguredBaseUrl)
             {
-                await tunnelManager.OpenTunnelAsync(node, cancellationToken);
-            }
+                var remoteWorkerStatus = await ProbeRemoteWorkerHeartbeatAsync(node.RemoteNodeId.Value, checkedAtUtc, cancellationToken);
+                if (!remoteWorkerStatus.CanVerify || remoteWorkerStatus.IsHealthy)
+                {
+                    if (node.HasStoredCredentials
+                        && node.LocalPort > 0
+                        && tunnelManager.GetTunnelState(node.WorkflowNodeId) != TunnelState.Connected)
+                    {
+                        await tunnelManager.OpenTunnelAsync(node, cancellationToken);
+                    }
 
-            await nodeRegistry.UpdateNodeHealthAsync(
-                node.WorkflowNodeId,
-                DesktopManagedNodeStatus.RemoteReachable,
-                diagnostic.Detail,
-                checkedAtUtc,
-                sshSuccessAtUtc: checkedAtUtc,
-                cancellationToken: cancellationToken);
-            return;
+                    await nodeRegistry.UpdateNodeHealthAsync(
+                        node.WorkflowNodeId,
+                        DesktopManagedNodeStatus.RemoteReachable,
+                        CombineDiagnosticDetails(diagnostic.Detail, remoteWorkerStatus.Detail),
+                        checkedAtUtc,
+                        sshSuccessAtUtc: checkedAtUtc,
+                        cancellationToken: cancellationToken);
+                    return;
+                }
+
+                recoveryReason = CombineDiagnosticDetails(
+                    diagnostic.Detail,
+                    $"{remoteWorkerStatus.Detail} Reinstalling and reconfiguring the worker automatically.");
+            }
+            else
+            {
+                if (node.HasStoredCredentials
+                    && node.LocalPort > 0
+                    && tunnelManager.GetTunnelState(node.WorkflowNodeId) != TunnelState.Connected)
+                {
+                    await tunnelManager.OpenTunnelAsync(node, cancellationToken);
+                }
+
+                await nodeRegistry.UpdateNodeHealthAsync(
+                    node.WorkflowNodeId,
+                    DesktopManagedNodeStatus.RemoteReachable,
+                    diagnostic.Detail,
+                    checkedAtUtc,
+                    sshSuccessAtUtc: checkedAtUtc,
+                    cancellationToken: cancellationToken);
+                return;
+            }
         }
 
         if (!node.RemoteNodeId.HasValue)
@@ -196,7 +227,7 @@ public sealed class DesktopSelfHealingService(
             await nodeRegistry.UpdateNodeHealthAsync(
                 node.WorkflowNodeId,
                 DesktopManagedNodeStatus.Installing,
-                "SSH is available. Reinstalling and reconfiguring the worker automatically.",
+                recoveryReason,
                 checkedAtUtc,
                 sshSuccessAtUtc: checkedAtUtc,
                 cancellationToken: cancellationToken);
@@ -226,6 +257,68 @@ public sealed class DesktopSelfHealingService(
         }
     }
 
+    private async Task<RemoteWorkerHeartbeatStatus> ProbeRemoteWorkerHeartbeatAsync(
+        Guid remoteNodeId,
+        DateTime checkedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var remoteNode = await dashboardDataService.GetNodeAsync(remoteNodeId, cancellationToken);
+            if (remoteNode is null)
+            {
+                return new RemoteWorkerHeartbeatStatus(
+                    IsHealthy: false,
+                    CanVerify: true,
+                    Detail: "The API no longer has a record for this node.");
+            }
+
+            if (!remoteNode.LastHeartbeatAtUtc.HasValue)
+            {
+                return new RemoteWorkerHeartbeatStatus(
+                    IsHealthy: false,
+                    CanVerify: true,
+                    Detail: "The worker has not reported any heartbeat to the API.");
+            }
+
+            var heartbeatAge = checkedAtUtc - remoteNode.LastHeartbeatAtUtc.Value;
+            if (heartbeatAge > MaxWorkerHeartbeatAge)
+            {
+                return new RemoteWorkerHeartbeatStatus(
+                    IsHealthy: false,
+                    CanVerify: true,
+                    Detail: $"The last worker heartbeat is stale ({heartbeatAge.TotalSeconds:0}s old).");
+            }
+
+            return new RemoteWorkerHeartbeatStatus(
+                IsHealthy: true,
+                CanVerify: true,
+                Detail: $"API heartbeat OK ({heartbeatAge.TotalSeconds:0}s old).");
+        }
+        catch (Exception ex)
+        {
+            return new RemoteWorkerHeartbeatStatus(
+                IsHealthy: false,
+                CanVerify: false,
+                Detail: $"Could not verify worker heartbeat from the API: {ex.Message}");
+        }
+    }
+
+    private static string CombineDiagnosticDetails(string first, string second)
+    {
+        if (string.IsNullOrWhiteSpace(first))
+        {
+            return second;
+        }
+
+        if (string.IsNullOrWhiteSpace(second))
+        {
+            return first;
+        }
+
+        return $"{first} | {second}";
+    }
+
     private async Task<bool> ProbeLocalHealthAsync(int localPort, CancellationToken cancellationToken)
     {
         foreach (var path in new[] { "api/health", "health" })
@@ -252,4 +345,6 @@ public sealed class DesktopSelfHealingService(
 
         return false;
     }
+
+    private readonly record struct RemoteWorkerHeartbeatStatus(bool IsHealthy, bool CanVerify, string Detail);
 }
