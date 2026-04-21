@@ -275,7 +275,14 @@ public sealed class DashboardDataService : IDashboardDataService
     {
         await EnsureAuthenticatedAsync(cancellationToken);
         using var response = await _httpClient.PostAsJsonAsync($"api/nodes/{nodeId}/commands", request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(body)
+                ? $"Dispatch of {request.CommandType} failed. HTTP {(int)response.StatusCode}."
+                : $"Dispatch of {request.CommandType} failed: {body}");
+        }
+
         var payload = await response.Content.ReadFromJsonAsync<DispatchResponse>(cancellationToken: cancellationToken);
         return payload?.CommandId;
     }

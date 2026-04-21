@@ -396,7 +396,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     {
         Application.Current?.Dispatcher?.InvokeAsync(async () =>
         {
-            _viewerSessions[accountId] = new ViewerSessionInfo(vncUrl, $"Manual takeover ready: {vncUrl}");
+            var normalizedViewerUrl = NormalizeViewerUrl(vncUrl, accountId);
+            _viewerSessions[accountId] = new ViewerSessionInfo(
+                normalizedViewerUrl,
+                $"Manual takeover ready: {normalizedViewerUrl}");
             await RefreshAccountDataAsync(accountId);
             StatusMessage = "Live: Manual required for account";
         });
@@ -1622,9 +1625,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        var viewerUrl = NormalizeViewerUrl(workerEvent.ActionUrl, workerEvent.AccountId.Value);
         _viewerSessions[workerEvent.AccountId.Value] = new ViewerSessionInfo(
-            workerEvent.ActionUrl,
-            $"{workerEvent.Title}: {workerEvent.ActionUrl}");
+            viewerUrl,
+            $"{workerEvent.Title}: {viewerUrl}");
     }
 
     private void RebuildSelectedNodeAccounts(Guid? preferredAccountId = null)
@@ -1797,7 +1801,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private void TryRestoreViewerSession(Guid accountId, string? alertMessage, string? email)
     {
-        var viewerUrl = ExtractViewerUrl(alertMessage);
+        var viewerUrl = NormalizeViewerUrl(ExtractViewerUrl(alertMessage), accountId);
         if (string.IsNullOrWhiteSpace(viewerUrl) || _viewerSessions.ContainsKey(accountId))
         {
             return;
@@ -1849,14 +1853,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         return match.Success ? match.Value.Trim() : null;
     }
 
-    private string? NormalizeViewerUrl(string? viewerUrl, AccountCardViewModel account)
+    private string? NormalizeViewerUrl(string? viewerUrl, Guid accountId)
+    {
+        var account = FindAccount(accountId);
+        return NormalizeViewerUrl(viewerUrl, account);
+    }
+
+    private string? NormalizeViewerUrl(string? viewerUrl, AccountCardViewModel? account)
     {
         if (string.IsNullOrWhiteSpace(viewerUrl) || !Uri.TryCreate(viewerUrl, UriKind.Absolute, out var uri))
-        {
-            return viewerUrl;
-        }
-
-        if (!IsLoopbackLikeHost(uri.Host))
         {
             return viewerUrl;
         }
@@ -1867,15 +1872,24 @@ public sealed class MainWindowViewModel : ViewModelBase
             return viewerUrl;
         }
 
+        var normalizedHost = IsLoopbackLikeHost(uri.Host) ? replacementHost : uri.Host;
+        var normalizedQuery = RewriteViewerQuery(uri.Query, replacementHost);
+        if (string.Equals(normalizedHost, uri.Host, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(normalizedQuery, uri.Query.TrimStart('?'), StringComparison.Ordinal))
+        {
+            return viewerUrl;
+        }
+
         var builder = new UriBuilder(uri)
         {
-            Host = replacementHost
+            Host = normalizedHost,
+            Query = normalizedQuery
         };
 
         return builder.Uri.ToString();
     }
 
-    private string? ResolveViewerHost(AccountCardViewModel account)
+    private string? ResolveViewerHost(AccountCardViewModel? account)
     {
         if (Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var apiUri)
             && !IsLoopbackLikeHost(apiUri.Host))
@@ -1883,12 +1897,55 @@ public sealed class MainWindowViewModel : ViewModelBase
             return apiUri.Host;
         }
 
-        if (!string.IsNullOrWhiteSpace(account.NodeIpAddress))
+        if (account is not null && !string.IsNullOrWhiteSpace(account.NodeIpAddress))
         {
             return account.NodeIpAddress.Trim();
         }
 
         return null;
+    }
+
+    private AccountCardViewModel? FindAccount(Guid accountId)
+        => _allAccounts.FirstOrDefault(account => account.AccountId == accountId)
+           ?? Accounts.FirstOrDefault(account => account.AccountId == accountId)
+           ?? ManualQueueAccounts.FirstOrDefault(account => account.AccountId == accountId)
+           ?? (FocusedAccount?.AccountId == accountId ? FocusedAccount : null)
+           ?? (SelectedAccount?.AccountId == accountId ? SelectedAccount : null);
+
+    private static string RewriteViewerQuery(string query, string replacementHost)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return string.Empty;
+        }
+
+        var segments = query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var changed = false;
+        var rewrittenSegments = new List<string>(segments.Length);
+        foreach (var segment in segments)
+        {
+            var parts = segment.Split('=', 2);
+            var key = Uri.UnescapeDataString(parts[0]);
+            var value = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty;
+
+            if (string.Equals(key, "host", StringComparison.OrdinalIgnoreCase) && IsLoopbackLikeHost(value))
+            {
+                value = replacementHost;
+                changed = true;
+            }
+
+            rewrittenSegments.Add(parts.Length > 1
+                ? $"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(value)}"
+                : Uri.EscapeDataString(key));
+        }
+
+        return changed ? string.Join("&", rewrittenSegments) : query.TrimStart('?');
     }
 
     private static bool IsLoopbackLikeHost(string host)

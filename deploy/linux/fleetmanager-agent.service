@@ -14,7 +14,7 @@ RestartSec=5
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=FM_ROOT=/var/lib/fleetmanager
 Environment=FM_BROWSER_BIN=/usr/bin/chromium
-Environment=FM_VIEWER_HOST=127.0.0.1
+Environment=FM_APPSETTINGS_PATH=/opt/fleetmanager-agent/appsettings.json
 Environment=FM_NOVNC_DIR=/usr/share/novnc
 Environment=FM_WEBSOCKIFY_BIN=/usr/bin/websockify
 
