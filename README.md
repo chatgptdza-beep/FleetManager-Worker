@@ -77,14 +77,23 @@ Publish a Linux package locally before provisioning a node from the Desktop app:
 
 This writes the unpacked package to `out/agent` and also creates a single GitHub-ready bundle at `out/bundles/fleetmanager-agent-bundle-linux-x64.zip`.
 The publish step also writes `.fleetmanager.sha256` for the unpacked agent folder and a bundle SHA256 file beside the zip.
-The Desktop SSH installer now prefers a local bundle from the workspace and uploads it directly to the VPS. If the bundle is missing, the Desktop runs `scripts/publish-agent.ps1` automatically before uploading.
+The professional deployment mode publishes this bundle to a stable GitHub Release tag named `agent-bundle-latest`.
+The Desktop SSH installer now prefers downloading that release asset directly on the VPS. Local upload is only used when you explicitly set `FLEETMANAGER_AGENT_BUNDLE_PATH`.
 
-Optional explicit local bundle override:
+GitHub Release publishing is automated by `.github/workflows/publish-agent-release.yml` on pushes to `main`, and can also be run manually with `workflow_dispatch`.
+
+Optional bundle source overrides:
 
 ```powershell
+$env:FLEETMANAGER_REPO_URL = "https://github.com/chatgptdza-beep/FleetManager-Worker.git"
+$env:FLEETMANAGER_AGENT_BUNDLE_RELEASE_TAG = "agent-bundle-latest"
+$env:FLEETMANAGER_AGENT_BUNDLE_URL = "https://github.com/owner/repo/releases/download/agent-bundle-latest/fleetmanager-agent-bundle-linux-x64.zip"
+$env:FLEETMANAGER_AGENT_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/agent-bundle-latest/fleetmanager-agent-bundle-linux-x64.zip.sha256"
+$env:FLEETMANAGER_AGENT_BUNDLE_SHA256 = "<optional literal sha256 override>"
 $env:FLEETMANAGER_AGENT_BUNDLE_PATH = "C:\path\to\fleetmanager-agent-bundle-linux-x64.zip"
-$env:FLEETMANAGER_AGENT_BUNDLE_SHA256 = "<sha256 of the zip file>"
 ```
+
+If `FLEETMANAGER_AGENT_BUNDLE_PATH` is set, the Desktop uploads that file directly and skips the GitHub download path.
 
 Manual publish example:
 
@@ -104,15 +113,18 @@ dotnet publish .\src\FleetManager.Agent\FleetManager.Agent.csproj `
 .\scripts\publish-agent.ps1
 ```
 
-### 2. Upload the bundle to the VPS
+### 2. Download the bundle on the VPS
 
-The Desktop does this automatically during provisioning.
+The Desktop does not upload the worker bundle in the default professional mode. It instructs the VPS to download the published GitHub Release asset directly and verify its checksum.
 
-If you are installing manually, upload `out/bundles/fleetmanager-agent-bundle-linux-x64.zip` to `/tmp/fleetmanager-agent-bundle.zip`, then extract it:
+If you are installing manually, download the release asset and checksum to `/tmp`, then extract it:
 
 ```bash
-mkdir -p /tmp/fleetmanager-bundle
-unzip -oq /tmp/fleetmanager-agent-bundle.zip -d /tmp/fleetmanager-bundle
+curl -fsSL "https://github.com/chatgptdza-beep/FleetManager-Worker/releases/download/agent-bundle-latest/fleetmanager-agent-bundle-linux-x64.zip" -o /tmp/fleetmanager-agent-bundle-linux-x64.zip
+curl -fsSL "https://github.com/chatgptdza-beep/FleetManager-Worker/releases/download/agent-bundle-latest/fleetmanager-agent-bundle-linux-x64.zip.sha256" -o /tmp/fleetmanager-agent-bundle-linux-x64.zip.sha256
+(cd /tmp && sha256sum -c fleetmanager-agent-bundle-linux-x64.zip.sha256)
+rm -rf /tmp/fleetmanager-bundle && mkdir -p /tmp/fleetmanager-bundle
+unzip -oq /tmp/fleetmanager-agent-bundle-linux-x64.zip -d /tmp/fleetmanager-bundle
 ```
 
 ### 3. Install the service

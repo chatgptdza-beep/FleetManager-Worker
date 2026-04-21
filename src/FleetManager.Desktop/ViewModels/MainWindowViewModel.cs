@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using FleetManager.Contracts.Accounts;
+using FleetManager.Contracts.Configuration;
 using FleetManager.Contracts.Nodes;
 using FleetManager.Contracts.Operations;
 using FleetManager.Desktop.Models;
@@ -2021,12 +2022,21 @@ public sealed class MainWindowViewModel : ViewModelBase
     private static string BuildInstallCommand(NodeCardViewModel node, string apiBaseUrl)
     {
         var bundleUrl = ResolveInstallBundleUrl();
+        var bundleSha256Url = ResolveInstallBundleSha256Url();
         var sshTarget = $"{node.SshUsername}@{node.IpAddress}";
+        var bundleRemotePath = $"/tmp/{FleetManagerReleaseDefaults.AgentBundleFileName}";
+        var bundleSha256RemotePath = $"/tmp/{FleetManagerReleaseDefaults.AgentBundleSha256FileName}";
+        var verifyBundleCommand = string.IsNullOrWhiteSpace(bundleSha256Url)
+            ? string.Empty
+            : $"curl -fsSL {ShellEscapeSingleQuoted(bundleSha256Url)} -o {ShellEscapeSingleQuoted(bundleSha256RemotePath)} && " +
+              $"(cd /tmp && sha256sum -c {ShellEscapeSingleQuoted(FleetManagerReleaseDefaults.AgentBundleSha256FileName)}) && ";
+
         return
             $"ssh {sshTarget} \"sudo apt-get update && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip && " +
-            $"curl -fsSL {ShellEscapeSingleQuoted(bundleUrl)} -o /tmp/fleetmanager-agent-bundle.zip && " +
+            $"curl -fsSL {ShellEscapeSingleQuoted(bundleUrl)} -o {ShellEscapeSingleQuoted(bundleRemotePath)} && " +
+            verifyBundleCommand +
             "rm -rf /tmp/fleetmanager-bundle && mkdir -p /tmp/fleetmanager-bundle && " +
-            "unzip -oq /tmp/fleetmanager-agent-bundle.zip -d /tmp/fleetmanager-bundle && " +
+            $"unzip -oq {ShellEscapeSingleQuoted(bundleRemotePath)} -d /tmp/fleetmanager-bundle && " +
             "sudo bash /tmp/fleetmanager-bundle/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-bundle/agent && " +
             $"bash /tmp/fleetmanager-bundle/deploy/linux/register-node.sh --api {ShellEscapeSingleQuoted(apiBaseUrl.Trim())} --admin-password '<set-api-password>' --name {ShellEscapeSingleQuoted(node.Name)} --ip {ShellEscapeSingleQuoted(node.IpAddress)} --ssh-user {ShellEscapeSingleQuoted(node.SshUsername)} --os {ShellEscapeSingleQuoted(node.OsType)} --region {ShellEscapeSingleQuoted(string.IsNullOrWhiteSpace(node.Region) ? "local" : node.Region)}\"";
     }
@@ -2076,47 +2086,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private static string ResolveInstallBundleUrl()
     {
-        var explicitUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_BUNDLE_URL");
-        if (!string.IsNullOrWhiteSpace(explicitUrl))
-        {
-            return explicitUrl.Trim();
-        }
-
-        var repoUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_URL")
-            ?? "https://github.com/chatgptdza-beep/FleetManager-Worker.git";
-        var branch = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_BRANCH") ?? "main";
-        if (TryBuildGitHubRawUrl(repoUrl, branch, "deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip", out var bundleUrl))
-        {
-            return bundleUrl;
-        }
-
-        return "<set-FLEETMANAGER_AGENT_BUNDLE_URL>";
+        var bundleUrl = DesktopEnvironment.ResolveAgentBundleUrl();
+        return string.IsNullOrWhiteSpace(bundleUrl)
+            ? "<set-FLEETMANAGER_AGENT_BUNDLE_URL>"
+            : bundleUrl;
     }
 
-    private static bool TryBuildGitHubRawUrl(string repoUrl, string branch, string relativePath, out string bundleUrl)
+    private static string ResolveInstallBundleSha256Url()
     {
-        bundleUrl = string.Empty;
-        if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var repoUri)
-            || !string.Equals(repoUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var segments = repoUri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2)
-        {
-            return false;
-        }
-
-        var owner = segments[0];
-        var repo = segments[1];
-        if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-        {
-            repo = repo[..^4];
-        }
-
-        bundleUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{branch.Trim('/')}/{relativePath.TrimStart('/')}";
-        return true;
+        return DesktopEnvironment.ResolveAgentBundleSha256Url();
     }
 
     private static string ShellEscapeSingleQuoted(string value)

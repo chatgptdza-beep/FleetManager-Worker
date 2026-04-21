@@ -8,13 +8,63 @@ internal static class DesktopEnvironment
         => ResolveFirstNonEmpty(
             FleetManagerDevDefaults.AdminPassword,
             "FLEETMANAGER_API_PASSWORD",
-            "AdminPassword");
+            "AdminPassword") ?? string.Empty;
 
     public static string ResolveAgentApiKey()
         => ResolveFirstNonEmpty(
             FleetManagerDevDefaults.AgentApiKey,
             "FLEETMANAGER_AGENT_API_KEY",
-            "AgentApiKey");
+            "AgentApiKey") ?? string.Empty;
+
+    public static string ResolveRepositoryUrl()
+        => ResolveFirstNonEmpty(
+            FleetManagerReleaseDefaults.RepositoryUrl,
+            "FLEETMANAGER_REPO_URL") ?? string.Empty;
+
+    public static string ResolveAgentBundleReleaseTag()
+        => ResolveFirstNonEmpty(
+            FleetManagerReleaseDefaults.AgentBundleReleaseTag,
+            "FLEETMANAGER_AGENT_BUNDLE_RELEASE_TAG") ?? string.Empty;
+
+    public static string ResolveAgentBundleUrl()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveAgentBundleReleaseTag(),
+            FleetManagerReleaseDefaults.AgentBundleFileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
+    public static string ResolveAgentBundleSha256Url()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_SHA256_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveAgentBundleReleaseTag(),
+            FleetManagerReleaseDefaults.AgentBundleSha256FileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
+    public static string? ResolveAgentBundlePathOverride()
+        => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_PATH");
+
+    public static string? ResolveAgentBundleSha256()
+        => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_SHA256");
 
     public static bool ShouldPersistSshCredentials()
     {
@@ -22,7 +72,7 @@ internal static class DesktopEnvironment
         return bool.TryParse(configured, out var persist) && persist;
     }
 
-    private static string ResolveFirstNonEmpty(string? defaultValue, params string[] environmentVariableNames)
+    private static string? ResolveFirstNonEmpty(string? defaultValue, params string[] environmentVariableNames)
     {
         foreach (var environmentVariableName in environmentVariableNames)
         {
