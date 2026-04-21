@@ -521,6 +521,54 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public async Task UpdateSelectedNodeAgentAsync()
+    {
+        var node = SelectedNode ?? throw new InvalidOperationException("Select a VPS first.");
+        var bundleUrl = DesktopEnvironment.ResolveAgentBundleUrl();
+        if (string.IsNullOrWhiteSpace(bundleUrl))
+        {
+            throw new InvalidOperationException("No agent release URL is configured.");
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["bundleUrl"] = bundleUrl,
+            ["bundleSha256Url"] = DesktopEnvironment.ResolveAgentBundleSha256Url(),
+            ["bundleSha256"] = DesktopEnvironment.ResolveAgentBundleSha256(),
+            ["restartDelaySeconds"] = 8
+        };
+
+        var commandId = await _dataService.DispatchNodeCommandAsync(node.NodeId, new DispatchNodeCommandRequest
+        {
+            CommandType = "UpdateAgentPackage",
+            PayloadJson = JsonSerializer.Serialize(payload)
+        });
+
+        if (!commandId.HasValue)
+        {
+            throw new InvalidOperationException("UpdateAgentPackage command dispatch failed.");
+        }
+
+        var command = await WaitForCommandResultAsync(node.NodeId, commandId.Value);
+        if (command is null)
+        {
+            throw new InvalidOperationException("UpdateAgentPackage did not return a status update.");
+        }
+
+        if (command.Status is "Failed" or "TimedOut")
+        {
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(command.ResultMessage)
+                ? "UpdateAgentPackage failed."
+                : command.ResultMessage);
+        }
+
+        await Task.Delay(1500);
+        await ReloadAsync(node.NodeId);
+        StatusMessage = string.IsNullOrWhiteSpace(command.ResultMessage)
+            ? $"Agent self-update queued for {node.Name} | {SourceBanner}"
+            : $"{command.ResultMessage.Trim()} | {SourceBanner}";
+    }
+
     public async Task AcknowledgeWorkerInboxEventAsync(WorkerInboxEventViewModel workerEvent)
     {
         var acknowledged = await _dataService.AcknowledgeWorkerInboxEventAsync(workerEvent.EventId);

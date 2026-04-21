@@ -612,6 +612,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void SelfUpdateWorker_Click(object sender, RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedNode is null)
+        {
+            MessageBox.Show(this, "No VPS is selected.", "FleetManager", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        await RunUiActionAsync(_viewModel.UpdateSelectedNodeAgentAsync);
+    }
+
     private async void ResetDesktopState_Click(object sender, RoutedEventArgs e)
     {
         var confirmed = MessageBox.Show(
