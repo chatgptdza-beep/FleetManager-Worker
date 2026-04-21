@@ -16,9 +16,6 @@ namespace FleetManager.Desktop.Services;
 
 public class SshProvisioningService : ISshProvisioningService
 {
-    private const string DefaultRepoUrl = "https://github.com/chatgptdza-beep/FleetManager-Worker.git";
-    private const string DefaultBranch = "main";
-    private const string DefaultBundleRelativePath = "deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip";
     private const string ApiBundleRemotePath = "/tmp/fleetmanager-api-bundle.zip";
     private const string ApiConfigRemotePath = "/tmp/fleetmanager-api-appsettings.Production.json";
     private const string ApiServiceRemotePath = "/tmp/fleetmanager-api.service";
@@ -32,6 +29,11 @@ public class SshProvisioningService : ISshProvisioningService
     private const string ApiDatabaseUser = "fleetmgr";
     private const string ApiProjectRelativePath = "src/FleetManager.Api/FleetManager.Api.csproj";
     private const string ApiAutoPublishRelativePath = "out/api";
+    private const string AgentBundleRemotePath = "/tmp/fleetmanager-agent-bundle.zip";
+    private const string AgentBundleFileName = "fleetmanager-agent-bundle-linux-x64.zip";
+    private const string AgentBundleRelativePath = "out/bundles/fleetmanager-agent-bundle-linux-x64.zip";
+    private const string AgentLegacyBundleRelativePath = "deploy/artifacts/fleetmanager-agent-bundle-linux-x64.zip";
+    private const string AgentPublishScriptRelativePath = "scripts/publish-agent.ps1";
     private const string LinuxRuntimeIdentifier = "linux-x64";
 
     public async Task<bool> TestConnectionAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
@@ -257,63 +259,79 @@ public class SshProvisioningService : ISshProvisioningService
 
     public async Task InstallAgentAsync(CreateNodeRequest request, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        var repoUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_URL") ?? DefaultRepoUrl;
-        var branch = Environment.GetEnvironmentVariable("FLEETMANAGER_REPO_BRANCH") ?? DefaultBranch;
-        var bundleUrl = ResolveBundleUrl(repoUrl, branch);
+        progress?.Report("[Agent local] Resolving FleetManager.Agent bundle...");
+        var (localBundlePath, deleteAfterUse) = await ResolveAgentBundlePathAsync(progress, cancellationToken);
         var bundleSha256 = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_BUNDLE_SHA256");
 
-        await Task.Run(() =>
+        try
         {
-            var connectionInfo = CreateConnectionInfo(request);
-            using var client = new SshClient(connectionInfo);
-            client.Connect();
-
-            progress?.Report("%30");
-            progress?.Report("[1/6] Installing download prerequisites...");
-            ExecuteStreaming(client, BuildElevatedCommand(request,
-                BuildAptUpdateAndInstallCommand("ca-certificates", "curl", "unzip")),
-                TimeSpan.FromMinutes(2), progress);
-            progress?.Report("%38");
-
-            progress?.Report("[2/6] Resolving GitHub bundle URL...");
-            progress?.Report($"Bundle source: {bundleUrl}");
-            progress?.Report("%48");
-
-            progress?.Report("[3/6] Downloading prebuilt agent bundle from GitHub...");
-            ExecuteStreaming(client, BuildElevatedCommand(request,
-                $"rm -f /tmp/fleetmanager-agent-bundle.zip && " +
-                $"curl -fsSL --retry 3 --retry-delay 2 {Quote(bundleUrl)} -o /tmp/fleetmanager-agent-bundle.zip"),
-                TimeSpan.FromMinutes(10), progress);
-
-            if (!string.IsNullOrWhiteSpace(bundleSha256))
+            await Task.Run(() =>
             {
+                var connectionInfo = CreateConnectionInfo(request);
+                using var client = new SshClient(connectionInfo);
+                using var sftp = new SftpClient(connectionInfo);
+
+                client.Connect();
+                sftp.Connect();
+
+                progress?.Report("%30");
+                progress?.Report("[1/6] Installing upload prerequisites...");
                 ExecuteStreaming(client, BuildElevatedCommand(request,
-                    $"echo {Quote($"{bundleSha256.Trim()}  /tmp/fleetmanager-agent-bundle.zip")} | sha256sum -c -"),
+                    BuildAptUpdateAndInstallCommand("ca-certificates", "curl", "unzip")),
+                    TimeSpan.FromMinutes(2), progress);
+                progress?.Report("%38");
+
+                progress?.Report("[2/6] Uploading FleetManager.Agent bundle...");
+                progress?.Report($"Bundle source: {localBundlePath}");
+                using (var bundleStream = File.OpenRead(localBundlePath))
+                {
+                    sftp.UploadFile(bundleStream, AgentBundleRemotePath, true);
+                }
+                progress?.Report("%48");
+
+                if (!string.IsNullOrWhiteSpace(bundleSha256))
+                {
+                    progress?.Report("[3/6] Verifying bundle checksum...");
+                    ExecuteStreaming(client, BuildElevatedCommand(request,
+                        $"echo {Quote($"{bundleSha256.Trim()}  {AgentBundleRemotePath}")} | sha256sum -c -"),
+                        TimeSpan.FromMinutes(1), progress);
+                }
+                else
+                {
+                    progress?.Report("[3/6] No checksum configured. Skipping sha256 verification.");
+                }
+
+                progress?.Report("%60");
+                progress?.Report("[4/6] Extracting bundle...");
+                ExecuteStreaming(client, BuildElevatedCommand(request,
+                    $"rm -rf /tmp/fleetmanager-bundle && mkdir -p /tmp/fleetmanager-bundle && " +
+                    $"unzip -oq {AgentBundleRemotePath} -d /tmp/fleetmanager-bundle"),
+                    TimeSpan.FromMinutes(3), progress);
+                progress?.Report("%70");
+
+                progress?.Report("[5/6] Installing agent and runtime dependencies...");
+                ExecuteStreaming(client, BuildElevatedCommand(request,
+                    "bash /tmp/fleetmanager-bundle/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-bundle/agent"),
+                    TimeSpan.FromMinutes(10), progress);
+                progress?.Report("%78");
+
+                progress?.Report("[6/6] Cleaning up build artifacts...");
+                ExecuteStreaming(client, BuildElevatedCommand(request,
+                    $"rm -rf /tmp/fleetmanager-bundle {AgentBundleRemotePath}"),
                     TimeSpan.FromMinutes(1), progress);
+
+                sftp.Disconnect();
+                client.Disconnect();
+                progress?.Report("Agent installation finished successfully.");
+            }, cancellationToken);
+        }
+        finally
+        {
+            if (deleteAfterUse && File.Exists(localBundlePath))
+            {
+                File.Delete(localBundlePath);
             }
-
-            progress?.Report("%60");
-            progress?.Report("[4/6] Extracting bundle...");
-            ExecuteStreaming(client, BuildElevatedCommand(request,
-                "rm -rf /tmp/fleetmanager-bundle && mkdir -p /tmp/fleetmanager-bundle && " +
-                "unzip -oq /tmp/fleetmanager-agent-bundle.zip -d /tmp/fleetmanager-bundle"),
-                TimeSpan.FromMinutes(3), progress);
-            progress?.Report("%70");
-
-            progress?.Report("[5/6] Installing agent and runtime dependencies...");
-            ExecuteStreaming(client, BuildElevatedCommand(request,
-                "bash /tmp/fleetmanager-bundle/deploy/linux/install-worker-ubuntu.sh /tmp/fleetmanager-bundle/agent"),
-                TimeSpan.FromMinutes(10), progress);
-            progress?.Report("%78");
-
-            progress?.Report("[6/6] Cleaning up build artifacts...");
-            ExecuteStreaming(client, BuildElevatedCommand(request,
-                "rm -rf /tmp/fleetmanager-bundle /tmp/fleetmanager-agent-bundle.zip"),
-                TimeSpan.FromMinutes(1), progress);
-
-            client.Disconnect();
-            progress?.Report("Agent installation finished successfully.");
-        }, cancellationToken);
+        }
     }
 
     public async Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
@@ -394,6 +412,63 @@ public class SshProvisioningService : ISshProvisioningService
         return (bundlePath, true);
     }
 
+    private static async Task<(string bundlePath, bool deleteAfterUse)> ResolveAgentBundlePathAsync(
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var explicitBundlePath = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_BUNDLE_PATH");
+        if (!string.IsNullOrWhiteSpace(explicitBundlePath))
+        {
+            var normalizedPath = Path.GetFullPath(explicitBundlePath.Trim());
+            if (!File.Exists(normalizedPath))
+            {
+                throw new FileNotFoundException(
+                    "FLEETMANAGER_AGENT_BUNDLE_PATH points to a file that does not exist.",
+                    normalizedPath);
+            }
+
+            progress?.Report($"[Agent local] Using explicit bundle path {normalizedPath}");
+            return (normalizedPath, false);
+        }
+
+        var searchRoots = EnumerateSearchRoots().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var root in searchRoots)
+        {
+            foreach (var relativePath in new[] { AgentBundleRelativePath, AgentLegacyBundleRelativePath })
+            {
+                var candidate = Path.Combine(root, relativePath);
+                if (File.Exists(candidate))
+                {
+                    progress?.Report($"[Agent local] Found existing bundle at {candidate}");
+                    return (candidate, false);
+                }
+            }
+        }
+
+        var publishScriptPath = FindExistingPath(searchRoots, AgentPublishScriptRelativePath);
+        if (string.IsNullOrWhiteSpace(publishScriptPath))
+        {
+            throw new InvalidOperationException(
+                "Could not locate scripts/publish-agent.ps1 to build the worker bundle automatically.");
+        }
+
+        progress?.Report("[Agent local] No local agent bundle found. Running scripts/publish-agent.ps1...");
+        await PublishAgentBundleAsync(publishScriptPath, progress, cancellationToken);
+
+        foreach (var root in searchRoots)
+        {
+            var candidate = Path.Combine(root, AgentBundleRelativePath);
+            if (File.Exists(candidate))
+            {
+                progress?.Report($"[Agent local] Created fresh bundle at {candidate}");
+                return (candidate, false);
+            }
+        }
+
+        throw new InvalidOperationException(
+            "scripts/publish-agent.ps1 completed but the agent bundle was not found at out/bundles.");
+    }
+
     private static async Task<string> ResolveApiPublishDirectoryAsync(
         IProgress<string>? progress,
         CancellationToken cancellationToken)
@@ -454,9 +529,14 @@ public class SshProvisioningService : ISshProvisioningService
 
     private static string? FindApiProjectPath(IEnumerable<string> searchRoots)
     {
+        return FindExistingPath(searchRoots, ApiProjectRelativePath);
+    }
+
+    private static string? FindExistingPath(IEnumerable<string> searchRoots, string relativePath)
+    {
         foreach (var root in searchRoots)
         {
-            var candidate = Path.Combine(root, ApiProjectRelativePath);
+            var candidate = Path.Combine(root, relativePath);
             if (File.Exists(candidate))
             {
                 return candidate;
@@ -529,6 +609,59 @@ public class SshProvisioningService : ISshProvisioningService
         {
             throw new InvalidOperationException(
                 $"dotnet publish for FleetManager.Api failed with exit code {process.ExitCode}.");
+        }
+    }
+
+    private static async Task PublishAgentBundleAsync(
+        string publishScriptPath,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "powershell",
+            WorkingDirectory = Path.GetDirectoryName(publishScriptPath) ?? Directory.GetCurrentDirectory(),
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("Bypass");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(publishScriptPath);
+
+        using var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };
+        process.OutputDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                progress?.Report($"  > {args.Data}");
+            }
+        };
+        process.ErrorDataReceived += (_, args) =>
+        {
+            if (!string.IsNullOrWhiteSpace(args.Data))
+            {
+                progress?.Report($"  [err] {args.Data}");
+            }
+        };
+
+        if (!process.Start())
+        {
+            throw new InvalidOperationException("Failed to start scripts/publish-agent.ps1.");
+        }
+
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        await process.WaitForExitAsync(cancellationToken);
+
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"scripts/publish-agent.ps1 failed with exit code {process.ExitCode}.");
         }
     }
 
@@ -643,49 +776,6 @@ public class SshProvisioningService : ISshProvisioningService
         }
 
         return Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-    }
-
-    private static string ResolveBundleUrl(string repoUrl, string branch)
-    {
-        var explicitUrl = Environment.GetEnvironmentVariable("FLEETMANAGER_AGENT_BUNDLE_URL");
-        if (!string.IsNullOrWhiteSpace(explicitUrl))
-        {
-            return explicitUrl.Trim();
-        }
-
-        if (TryBuildGitHubRawUrl(repoUrl, branch, DefaultBundleRelativePath, out var bundleUrl))
-        {
-            return bundleUrl;
-        }
-
-        throw new InvalidOperationException(
-            "Could not determine a GitHub bundle URL automatically. Set FLEETMANAGER_AGENT_BUNDLE_URL.");
-    }
-
-    private static bool TryBuildGitHubRawUrl(string repoUrl, string branch, string relativePath, out string bundleUrl)
-    {
-        bundleUrl = string.Empty;
-        if (!Uri.TryCreate(repoUrl, UriKind.Absolute, out var repoUri)
-            || !string.Equals(repoUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var segments = repoUri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2)
-        {
-            return false;
-        }
-
-        var owner = segments[0];
-        var repo = segments[1];
-        if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
-        {
-            repo = repo[..^4];
-        }
-
-        bundleUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/{branch.Trim('/')}/{relativePath.TrimStart('/')}";
-        return true;
     }
 
     private static string BuildAptUpdateAndInstallCommand(params string[] packages)
