@@ -7,6 +7,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
 $repoRoot = [string](Resolve-Path (Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repoRoot 'src\FleetManager.Agent\FleetManager.Agent.csproj'
 $outputPath = Join-Path $repoRoot 'out\agent'
@@ -38,6 +41,42 @@ function Get-RelativeOutputPath {
     }
 
     return [System.IO.Path]::GetFileName($normalizedFull)
+}
+
+function New-ZipArchiveWithNormalizedPaths {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if (Test-Path $DestinationPath) {
+        Remove-Item -LiteralPath $DestinationPath -Force
+    }
+
+    $archive = [System.IO.Compression.ZipFile]::Open($DestinationPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        Get-ChildItem -LiteralPath $SourcePath -File -Recurse |
+            Sort-Object FullName |
+            ForEach-Object {
+                $relativePath = Get-RelativeOutputPath -BasePath $SourcePath -FullPath $_.FullName
+                $entryPath = $relativePath.Replace('\', '/')
+                $entry = $archive.CreateEntry($entryPath, [System.IO.Compression.CompressionLevel]::Optimal)
+                $entry.LastWriteTime = $_.LastWriteTimeUtc
+
+                $input = [System.IO.File]::OpenRead($_.FullName)
+                $output = $entry.Open()
+                try {
+                    $input.CopyTo($output)
+                }
+                finally {
+                    $output.Dispose()
+                    $input.Dispose()
+                }
+            }
+    }
+    finally {
+        $archive.Dispose()
+    }
 }
 
 dotnet publish $projectPath `
@@ -93,7 +132,7 @@ $bundleMetadata = [ordered]@{
 
 $bundleMetadata | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $bundleStagingPath 'bundle-info.json')
 
-Compress-Archive -Path (Join-Path $bundleStagingPath '*') -DestinationPath $bundlePath -CompressionLevel Optimal
+New-ZipArchiveWithNormalizedPaths -SourcePath $bundleStagingPath -DestinationPath $bundlePath
 
 $bundleHash = (Get-FileHash -LiteralPath $bundlePath -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath $bundleHashPath -Value "$bundleHash  $bundleFileName"

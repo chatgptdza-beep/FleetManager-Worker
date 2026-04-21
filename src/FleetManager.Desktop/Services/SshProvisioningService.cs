@@ -427,6 +427,7 @@ public class SshProvisioningService : ISshProvisioningService
                     normalizedPath);
             }
 
+            EnsureLinuxCompatibleZipEntries(normalizedPath);
             progress?.Report($"[Agent local] Using explicit bundle path {normalizedPath}");
             return (normalizedPath, false);
         }
@@ -439,6 +440,12 @@ public class SshProvisioningService : ISshProvisioningService
                 var candidate = Path.Combine(root, relativePath);
                 if (File.Exists(candidate))
                 {
+                    if (!IsLinuxCompatibleZip(candidate))
+                    {
+                        progress?.Report($"[Agent local] Existing bundle at {candidate} uses Windows path separators. Rebuilding it...");
+                        continue;
+                    }
+
                     progress?.Report($"[Agent local] Found existing bundle at {candidate}");
                     return (candidate, false);
                 }
@@ -460,6 +467,7 @@ public class SshProvisioningService : ISshProvisioningService
             var candidate = Path.Combine(root, AgentBundleRelativePath);
             if (File.Exists(candidate))
             {
+                EnsureLinuxCompatibleZipEntries(candidate);
                 progress?.Report($"[Agent local] Created fresh bundle at {candidate}");
                 return (candidate, false);
             }
@@ -662,6 +670,30 @@ public class SshProvisioningService : ISshProvisioningService
         {
             throw new InvalidOperationException(
                 $"scripts/publish-agent.ps1 failed with exit code {process.ExitCode}.");
+        }
+    }
+
+    private static bool IsLinuxCompatibleZip(string bundlePath)
+    {
+        try
+        {
+            EnsureLinuxCompatibleZipEntries(bundlePath);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void EnsureLinuxCompatibleZipEntries(string bundlePath)
+    {
+        using var archive = ZipFile.OpenRead(bundlePath);
+        var invalidEntry = archive.Entries.FirstOrDefault(entry => entry.FullName.Contains('\\'));
+        if (invalidEntry is not null)
+        {
+            throw new InvalidOperationException(
+                $"The bundle '{bundlePath}' contains Windows path separators in entry '{invalidEntry.FullName}'.");
         }
     }
 
