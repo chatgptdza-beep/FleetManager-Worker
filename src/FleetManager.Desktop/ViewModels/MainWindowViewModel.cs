@@ -594,34 +594,64 @@ public sealed class MainWindowViewModel : ViewModelBase
             ["apiRestartDelaySeconds"] = apiRestartDelaySeconds
         };
 
-        var commandId = await _dataService.DispatchNodeCommandAsync(node.NodeId, new DispatchNodeCommandRequest
+        try
         {
-            CommandType = "UpdateNodeStack",
-            PayloadJson = JsonSerializer.Serialize(payload)
-        });
+            var commandId = await _dataService.DispatchNodeCommandAsync(node.NodeId, new DispatchNodeCommandRequest
+            {
+                CommandType = "UpdateNodeStack",
+                PayloadJson = JsonSerializer.Serialize(payload)
+            });
 
-        if (!commandId.HasValue)
-        {
-            throw new InvalidOperationException("UpdateNodeStack command dispatch failed.");
+            if (!commandId.HasValue)
+            {
+                throw new InvalidOperationException("UpdateNodeStack command dispatch failed.");
+            }
+
+            var command = await WaitForCommandResultAsync(node.NodeId, commandId.Value);
+            if (command is null)
+            {
+                throw new InvalidOperationException("UpdateNodeStack did not return a status update.");
+            }
+
+            if (command.Status is "Failed" or "TimedOut")
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(command.ResultMessage)
+                    ? "UpdateNodeStack failed."
+                    : command.ResultMessage);
+            }
+
+            await WaitForNodeRecoveryAfterStackUpdateAsync(node, restartDelaySeconds, apiRestartDelaySeconds);
+            StatusMessage = string.IsNullOrWhiteSpace(command.ResultMessage)
+                ? $"Stack self-update queued for {node.Name} | {SourceBanner}"
+                : $"{command.ResultMessage.Trim()} | {SourceBanner}";
         }
-
-        var command = await WaitForCommandResultAsync(node.NodeId, commandId.Value);
-        if (command is null)
+        catch (InvalidOperationException ex) when (LooksLikeLegacyStackDispatchFailure(ex))
         {
-            throw new InvalidOperationException("UpdateNodeStack did not return a status update.");
-        }
+            if (IsCurrentApiHost(node))
+            {
+                if (await TryBootstrapLegacyCurrentApiHostAsync(node))
+                {
+                    return;
+                }
 
-        if (command.Status is "Failed" or "TimedOut")
-        {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(command.ResultMessage)
-                ? "UpdateNodeStack failed."
-                : command.ResultMessage);
-        }
+                throw new InvalidOperationException(
+                    "This VPS hosts the current FleetManager API and is still on a legacy build that predates stack self-update. " +
+                    "No SSH credentials are stored locally, so the desktop cannot bootstrap it automatically. " +
+                    "Open Node Registry, save the SSH password or key for this VPS once, then run Self Update Stack again.");
+            }
 
-        await WaitForNodeRecoveryAfterStackUpdateAsync(node, restartDelaySeconds, apiRestartDelaySeconds);
-        StatusMessage = string.IsNullOrWhiteSpace(command.ResultMessage)
-            ? $"Stack self-update queued for {node.Name} | {SourceBanner}"
-            : $"{command.ResultMessage.Trim()} | {SourceBanner}";
+            try
+            {
+                await UpdateSelectedNodeAgentAsync();
+                StatusMessage = $"Legacy control-plane detected. Worker self-update finished for {node.Name}. The primary API host still needs a one-time bootstrap. | {SourceBanner}";
+            }
+            catch (InvalidOperationException agentEx) when (LooksLikeMissingLegacyWorkerUpdateScript(agentEx))
+            {
+                throw new InvalidOperationException(
+                    "This VPS is running a legacy worker that does not include UpdateAgentPackage.sh yet. " +
+                    "Reinstall or bootstrap the worker once over SSH, then future updates will come from GitHub Releases.");
+            }
+        }
     }
 
     public async Task AcknowledgeWorkerInboxEventAsync(WorkerInboxEventViewModel workerEvent)
@@ -1600,6 +1630,41 @@ public sealed class MainWindowViewModel : ViewModelBase
         return Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var apiUri)
             && string.Equals(apiUri.Host, node.IpAddress.Trim(), StringComparison.OrdinalIgnoreCase);
     }
+
+    private async Task<bool> TryBootstrapLegacyCurrentApiHostAsync(NodeCardViewModel node)
+    {
+        var managedNode = await _nodeRegistry.GetByRemoteNodeIdAsync(node.NodeId);
+        if (managedNode is null || !managedNode.HasStoredCredentials)
+        {
+            return false;
+        }
+
+        var connectionRequest = _nodeRegistry.BuildConnectionRequest(managedNode);
+        var progress = new Progress<string>(message =>
+        {
+            Application.Current?.Dispatcher?.Invoke(() =>
+            {
+                StatusMessage = $"Legacy bootstrap: {message}";
+            });
+        });
+
+        await DisconnectSignalRAsync();
+        await _sshProvisioningService.InstallApiAsync(connectionRequest, progress);
+        await _sshProvisioningService.InstallAgentAsync(connectionRequest, _dataService.CurrentBaseUrl, progress);
+        await _sshProvisioningService.ConfigureAgentAsync(connectionRequest, node.NodeId, _dataService.CurrentBaseUrl, progress);
+        await Task.Delay(2000);
+        await ReloadAsync(node.NodeId);
+        await TryConnectSignalRAsync();
+        StatusMessage = $"Legacy API host {node.Name} bootstrapped successfully from SSH and is now GitHub-release updateable. | {SourceBanner}";
+        return true;
+    }
+
+    private static bool LooksLikeLegacyStackDispatchFailure(InvalidOperationException exception)
+        => exception.Message.StartsWith("Dispatch of UpdateNodeStack failed", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeMissingLegacyWorkerUpdateScript(InvalidOperationException exception)
+        => exception.Message.Contains("UpdateAgentPackage.sh", StringComparison.OrdinalIgnoreCase)
+           || exception.Message.Contains("Script not found", StringComparison.OrdinalIgnoreCase);
 
     private async Task LoadNodesAsync()
     {
