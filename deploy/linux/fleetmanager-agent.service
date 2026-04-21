@@ -15,6 +15,7 @@ Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=FM_ROOT=/var/lib/fleetmanager
 Environment=FM_BROWSER_BIN=/usr/bin/chromium
 Environment=FM_APPSETTINGS_PATH=/opt/fleetmanager-agent/appsettings.json
+Environment=FM_VNC_REQUIRE_PASSWORD=0
 Environment=FM_NOVNC_DIR=/usr/share/novnc
 Environment=FM_WEBSOCKIFY_BIN=/usr/bin/websockify
 

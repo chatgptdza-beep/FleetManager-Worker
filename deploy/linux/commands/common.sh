@@ -100,16 +100,45 @@ ensure_viewer_stack() {
     return 1
   fi
 
-  if ! pgrep -f "x11vnc .* -rfbport $FM_VNC_PORT" >/dev/null 2>&1; then
-    # Generate per-session VNC password if it does not exist
+  local require_vnc_password="${FM_VNC_REQUIRE_PASSWORD:-0}"
+  local vnc_auth_mode="nopw"
+  local x11vnc_auth_args=(-nopw)
+  if [[ "$require_vnc_password" == "1" ]]; then
     local vnc_secret_file="$SESSION_DIR/vnc.secret"
-    if [[ ! -f "$vnc_secret_file" ]]; then
-      head -c 6 /dev/urandom | base64 | tr -d '/+=' | head -c 8 > "$vnc_secret_file"
-      chmod 600 "$vnc_secret_file"
+    local vnc_pw="${FM_VNC_PASSWORD:-}"
+    if [[ -z "$vnc_pw" ]]; then
+      if [[ ! -f "$vnc_secret_file" ]]; then
+        head -c 6 /dev/urandom | base64 | tr -d '/+=' | head -c 8 > "$vnc_secret_file"
+        chmod 600 "$vnc_secret_file"
+      fi
+      vnc_pw="$(cat "$vnc_secret_file")"
     fi
-    local vnc_pw
-    vnc_pw="$(cat "$vnc_secret_file")"
-    DISPLAY="$FM_DISPLAY" x11vnc -forever -shared -passwd "$vnc_pw" -rfbport "$FM_VNC_PORT" >> "$SESSION_DIR/viewer.log" 2>&1 &
+
+    vnc_auth_mode="passwd"
+    x11vnc_auth_args=(-passwd "$vnc_pw")
+  else
+    rm -f "$SESSION_DIR/vnc.secret" 2>/dev/null || true
+  fi
+
+  local x11vnc_pid
+  x11vnc_pid="$(pgrep -f "x11vnc .* -rfbport $FM_VNC_PORT" | head -n 1 || true)"
+  if [[ -n "$x11vnc_pid" ]]; then
+    local x11vnc_cmdline
+    x11vnc_cmdline="$(tr '\0' ' ' < "/proc/$x11vnc_pid/cmdline" 2>/dev/null || true)"
+    local running_auth_mode="nopw"
+    if [[ "$x11vnc_cmdline" == *" -passwd "* ]]; then
+      running_auth_mode="passwd"
+    fi
+
+    if [[ "$running_auth_mode" != "$vnc_auth_mode" ]]; then
+      kill "$x11vnc_pid" 2>/dev/null || true
+      sleep 1
+      x11vnc_pid=""
+    fi
+  fi
+
+  if [[ -z "$x11vnc_pid" ]]; then
+    DISPLAY="$FM_DISPLAY" x11vnc -forever -shared "${x11vnc_auth_args[@]}" -rfbport "$FM_VNC_PORT" >> "$SESSION_DIR/viewer.log" 2>&1 &
   fi
 
   local novnc_dir="${FM_NOVNC_DIR:-/usr/share/novnc}"
