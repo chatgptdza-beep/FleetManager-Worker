@@ -21,6 +21,21 @@ public sealed class GitHubReleaseAssetResolverTests
     }
 
     [Fact]
+    public void TryBuildReleaseAssetUrl_builds_url_for_api_release_assets()
+    {
+        var built = GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            "https://github.com/chatgptdza-beep/FleetManager-Worker.git",
+            FleetManagerReleaseDefaults.ApiBundleReleaseTag,
+            FleetManagerReleaseDefaults.ApiBundleFileName,
+            out var assetUrl);
+
+        Assert.True(built);
+        Assert.Equal(
+            "https://github.com/chatgptdza-beep/FleetManager-Worker/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip",
+            assetUrl);
+    }
+
+    [Fact]
     public void TryBuildReleaseAssetUrl_builds_url_for_ssh_repository_format()
     {
         var built = GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(

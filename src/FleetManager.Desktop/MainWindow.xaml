@@ -566,7 +566,7 @@
                                                         <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyNodeId_Click" Content="📋  Copy Node ID" HorizontalContentAlignment="Center" />
                                                         <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyWorkerConfig_Click" Content="📋  Copy Worker Config JSON" HorizontalContentAlignment="Center" />
                                                         <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyInstallCommand_Click" Content="📋  Copy Install Command" HorizontalContentAlignment="Center" />
-                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="SelfUpdateWorker_Click" Content="Self Update Worker" HorizontalContentAlignment="Center" />
+                                                        <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="SelfUpdateStack_Click" Content="Self Update Stack" HorizontalContentAlignment="Center" />
                                                         <Button Style="{StaticResource GhostButtonStyle}" Height="38" Click="DeleteVps_Click" Content="🗑  Delete This VPS" HorizontalContentAlignment="Center" Background="#4B2025" BorderBrush="#FFB1B1" Foreground="#FFB1B1" />
                                                     </StackPanel>
                                                 </StackPanel>

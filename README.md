@@ -82,6 +82,14 @@ The Desktop SSH installer now prefers downloading that release asset directly on
 
 GitHub Release publishing is automated by `.github/workflows/publish-agent-release.yml` on pushes to `main`, and can also be run manually with `workflow_dispatch`.
 
+The API stack follows the same pattern:
+
+```powershell
+.\scripts\publish-api.ps1
+```
+
+This creates `out/bundles/fleetmanager-api-bundle-linux-x64.zip`, and `.github/workflows/publish-api-release.yml` publishes it to the stable tag `api-bundle-latest`.
+
 Optional bundle source overrides:
 
 ```powershell
@@ -91,9 +99,17 @@ $env:FLEETMANAGER_AGENT_BUNDLE_URL = "https://github.com/owner/repo/releases/dow
 $env:FLEETMANAGER_AGENT_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/agent-bundle-latest/fleetmanager-agent-bundle-linux-x64.zip.sha256"
 $env:FLEETMANAGER_AGENT_BUNDLE_SHA256 = "<optional literal sha256 override>"
 $env:FLEETMANAGER_AGENT_BUNDLE_PATH = "C:\path\to\fleetmanager-agent-bundle-linux-x64.zip"
+$env:FLEETMANAGER_API_BUNDLE_RELEASE_TAG = "api-bundle-latest"
+$env:FLEETMANAGER_API_BUNDLE_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip"
+$env:FLEETMANAGER_API_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip.sha256"
+$env:FLEETMANAGER_API_BUNDLE_SHA256 = "<optional literal sha256 override>"
 ```
 
 If `FLEETMANAGER_AGENT_BUNDLE_PATH` is set, the Desktop uploads that file directly and skips the GitHub download path.
+
+## Self Update
+
+The selected node now exposes `Self Update Stack` in the Desktop UI. The command downloads the latest agent bundle from `agent-bundle-latest`, updates the installed worker command set, and, when the node also hosts `FleetManager.Api`, stages the latest API bundle from `api-bundle-latest` and restarts both services without SSH.
 
 Manual publish example:
 

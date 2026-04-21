@@ -6,6 +6,9 @@ public static class FleetManagerReleaseDefaults
     public const string AgentBundleReleaseTag = "agent-bundle-latest";
     public const string AgentBundleFileName = "fleetmanager-agent-bundle-linux-x64.zip";
     public const string AgentBundleSha256FileName = AgentBundleFileName + ".sha256";
+    public const string ApiBundleReleaseTag = "api-bundle-latest";
+    public const string ApiBundleFileName = "fleetmanager-api-bundle-linux-x64.zip";
+    public const string ApiBundleSha256FileName = ApiBundleFileName + ".sha256";
 }
 
 public static class GitHubReleaseAssetResolver

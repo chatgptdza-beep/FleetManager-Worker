@@ -1,0 +1,68 @@
+name: Publish Api Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-api-release.yml"
+      - "scripts/publish-api.ps1"
+      - "src/FleetManager.Api/**"
+      - "src/FleetManager.Application/**"
+      - "src/FleetManager.Contracts/**"
+      - "src/FleetManager.Domain/**"
+      - "src/FleetManager.Infrastructure/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-api-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build API release bundle
+        shell: pwsh
+        run: ./scripts/publish-api.ps1
+
+      - name: Publish stable GitHub Release asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "api-bundle-latest"
+          $title = "FleetManager API Bundle (Latest)"
+          $notes = "Auto-published from commit $env:GITHUB_SHA."
+          $assets = @(
+            "out/bundles/fleetmanager-api-bundle-linux-x64.zip",
+            "out/bundles/fleetmanager-api-bundle-linux-x64.zip.sha256"
+          )
+
+          gh release view $tag 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $assets --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "gh release upload failed with exit code $LASTEXITCODE."
+            }
+
+            gh release edit $tag --title $title --notes $notes
+            if ($LASTEXITCODE -ne 0) {
+              throw "gh release edit failed with exit code $LASTEXITCODE."
+            }
+
+            exit 0
+          }
+
+          gh release create $tag $assets --title $title --notes $notes
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release create failed with exit code $LASTEXITCODE."
+          }

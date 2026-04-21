@@ -26,6 +26,11 @@ internal static class DesktopEnvironment
             FleetManagerReleaseDefaults.AgentBundleReleaseTag,
             "FLEETMANAGER_AGENT_BUNDLE_RELEASE_TAG") ?? string.Empty;
 
+    public static string ResolveApiBundleReleaseTag()
+        => ResolveFirstNonEmpty(
+            FleetManagerReleaseDefaults.ApiBundleReleaseTag,
+            "FLEETMANAGER_API_BUNDLE_RELEASE_TAG") ?? string.Empty;
+
     public static string ResolveAgentBundleUrl()
     {
         var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_URL");
@@ -60,11 +65,48 @@ internal static class DesktopEnvironment
             : string.Empty;
     }
 
+    public static string ResolveApiBundleUrl()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_API_BUNDLE_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveApiBundleReleaseTag(),
+            FleetManagerReleaseDefaults.ApiBundleFileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
+    public static string ResolveApiBundleSha256Url()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_API_BUNDLE_SHA256_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveApiBundleReleaseTag(),
+            FleetManagerReleaseDefaults.ApiBundleSha256FileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
     public static string? ResolveAgentBundlePathOverride()
         => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_PATH");
 
     public static string? ResolveAgentBundleSha256()
         => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_SHA256");
+
+    public static string? ResolveApiBundleSha256()
+        => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_API_BUNDLE_SHA256");
 
     public static bool ShouldPersistSshCredentials()
     {

@@ -14,10 +14,11 @@ public enum NodeCommandType
     RestartAgentService = 9,
     ReloadApprovedConfig = 10,
     UpdateAgentPackage = 11,
-    LoginWorkflow = 12,
-    StartAutomation = 13,
-    StopAutomation = 14,
-    PauseAutomation = 15,
-    RefreshProxyPool = 16,
-    TakeoverComplete = 17
+    UpdateNodeStack = 12,
+    LoginWorkflow = 13,
+    StartAutomation = 14,
+    StopAutomation = 15,
+    PauseAutomation = 16,
+    RefreshProxyPool = 17,
+    TakeoverComplete = 18
 }

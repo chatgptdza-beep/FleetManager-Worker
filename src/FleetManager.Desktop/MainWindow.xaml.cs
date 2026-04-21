@@ -612,7 +612,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void SelfUpdateWorker_Click(object sender, RoutedEventArgs e)
+    private async void SelfUpdateStack_Click(object sender, RoutedEventArgs e)
     {
         if (_viewModel.SelectedNode is null)
         {
@@ -620,7 +620,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        await RunUiActionAsync(_viewModel.UpdateSelectedNodeAgentAsync);
+        await RunUiActionAsync(_viewModel.UpdateSelectedNodeStackAsync);
     }
 
     private async void ResetDesktopState_Click(object sender, RoutedEventArgs e)

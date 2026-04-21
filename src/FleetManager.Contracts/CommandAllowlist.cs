@@ -19,6 +19,7 @@ public static class CommandAllowlist
         "RestartAgentService",
         "ReloadApprovedConfig",
         "UpdateAgentPackage",
+        "UpdateNodeStack",
         "LoginWorkflow",
         "StartAutomation",
         "StopAutomation",

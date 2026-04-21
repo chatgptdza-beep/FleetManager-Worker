@@ -569,6 +569,61 @@ public sealed class MainWindowViewModel : ViewModelBase
             : $"{command.ResultMessage.Trim()} | {SourceBanner}";
     }
 
+    public async Task UpdateSelectedNodeStackAsync()
+    {
+        var node = SelectedNode ?? throw new InvalidOperationException("Select a VPS first.");
+        var agentBundleUrl = DesktopEnvironment.ResolveAgentBundleUrl();
+        if (string.IsNullOrWhiteSpace(agentBundleUrl))
+        {
+            throw new InvalidOperationException("No agent release URL is configured.");
+        }
+
+        var apiBundleUrl = DesktopEnvironment.ResolveApiBundleUrl();
+        var restartDelaySeconds = 8;
+        var apiRestartDelaySeconds = 12;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["bundleUrl"] = agentBundleUrl,
+            ["bundleSha256Url"] = DesktopEnvironment.ResolveAgentBundleSha256Url(),
+            ["bundleSha256"] = DesktopEnvironment.ResolveAgentBundleSha256(),
+            ["apiBundleUrl"] = string.IsNullOrWhiteSpace(apiBundleUrl) ? null : apiBundleUrl,
+            ["apiBundleSha256Url"] = DesktopEnvironment.ResolveApiBundleSha256Url(),
+            ["apiBundleSha256"] = DesktopEnvironment.ResolveApiBundleSha256(),
+            ["restartDelaySeconds"] = restartDelaySeconds,
+            ["apiRestartDelaySeconds"] = apiRestartDelaySeconds
+        };
+
+        var commandId = await _dataService.DispatchNodeCommandAsync(node.NodeId, new DispatchNodeCommandRequest
+        {
+            CommandType = "UpdateNodeStack",
+            PayloadJson = JsonSerializer.Serialize(payload)
+        });
+
+        if (!commandId.HasValue)
+        {
+            throw new InvalidOperationException("UpdateNodeStack command dispatch failed.");
+        }
+
+        var command = await WaitForCommandResultAsync(node.NodeId, commandId.Value);
+        if (command is null)
+        {
+            throw new InvalidOperationException("UpdateNodeStack did not return a status update.");
+        }
+
+        if (command.Status is "Failed" or "TimedOut")
+        {
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(command.ResultMessage)
+                ? "UpdateNodeStack failed."
+                : command.ResultMessage);
+        }
+
+        await WaitForNodeRecoveryAfterStackUpdateAsync(node, restartDelaySeconds, apiRestartDelaySeconds);
+        StatusMessage = string.IsNullOrWhiteSpace(command.ResultMessage)
+            ? $"Stack self-update queued for {node.Name} | {SourceBanner}"
+            : $"{command.ResultMessage.Trim()} | {SourceBanner}";
+    }
+
     public async Task AcknowledgeWorkerInboxEventAsync(WorkerInboxEventViewModel workerEvent)
     {
         var acknowledged = await _dataService.AcknowledgeWorkerInboxEventAsync(workerEvent.EventId);
@@ -1496,6 +1551,55 @@ public sealed class MainWindowViewModel : ViewModelBase
            || string.Equals(commandType, "StopBrowser", StringComparison.Ordinal)
            || string.Equals(commandType, "OpenAssignedSession", StringComparison.Ordinal)
            || string.Equals(commandType, "FetchSessionLogs", StringComparison.Ordinal);
+
+    private async Task WaitForNodeRecoveryAfterStackUpdateAsync(
+        NodeCardViewModel node,
+        int agentRestartDelaySeconds,
+        int apiRestartDelaySeconds)
+    {
+        var maxDelaySeconds = Math.Max(agentRestartDelaySeconds, IsCurrentApiHost(node) ? apiRestartDelaySeconds : 0);
+        var firstProbeAt = DateTime.UtcNow.AddSeconds(Math.Max(4, maxDelaySeconds + 2));
+        var deadline = firstProbeAt.AddSeconds(10);
+        Exception? lastError = null;
+
+        if (DateTime.UtcNow < firstProbeAt)
+        {
+            await Task.Delay(firstProbeAt - DateTime.UtcNow);
+        }
+
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                await ReloadAsync(node.NodeId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            await Task.Delay(2000);
+        }
+
+        if (lastError is not null)
+        {
+            throw lastError;
+        }
+
+        await ReloadAsync(node.NodeId);
+    }
+
+    private bool IsCurrentApiHost(NodeCardViewModel node)
+    {
+        if (string.IsNullOrWhiteSpace(node.IpAddress))
+        {
+            return false;
+        }
+
+        return Uri.TryCreate(_dataService.CurrentBaseUrl, UriKind.Absolute, out var apiUri)
+            && string.Equals(apiUri.Host, node.IpAddress.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
 
     private async Task LoadNodesAsync()
     {
