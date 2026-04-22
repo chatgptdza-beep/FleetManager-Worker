@@ -21,7 +21,8 @@ public enum MainView
     Accounts,
     Nodes,
     ManualQueue,
-    Settings
+    Settings,
+    Extensions
 }
 
 public sealed class MainWindowViewModel : ViewModelBase
@@ -68,6 +69,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public Visibility NodesViewVisibility => CurrentView == MainView.Nodes ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ManualQueueViewVisibility => CurrentView == MainView.ManualQueue ? Visibility.Visible : Visibility.Collapsed;
     public Visibility SettingsViewVisibility => CurrentView == MainView.Settings ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ExtensionsViewVisibility => CurrentView == MainView.Extensions ? Visibility.Visible : Visibility.Collapsed;
     public Visibility ManualQueueEmptyVisibility => ManualQueueAccounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     public Visibility WorkerInboxEmptyVisibility => WorkerInboxEvents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
@@ -76,6 +78,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     public bool IsNodesActive => CurrentView == MainView.Nodes;
     public bool IsManualQueueActive => CurrentView == MainView.ManualQueue;
     public bool IsSettingsActive => CurrentView == MainView.Settings;
+    public bool IsExtensionsActive => CurrentView == MainView.Extensions;
 
     public void SwitchView(string viewName)
     {
@@ -2163,11 +2166,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(NodesViewVisibility));
         OnPropertyChanged(nameof(ManualQueueViewVisibility));
         OnPropertyChanged(nameof(SettingsViewVisibility));
+        OnPropertyChanged(nameof(ExtensionsViewVisibility));
         OnPropertyChanged(nameof(IsDashboardActive));
         OnPropertyChanged(nameof(IsAccountsActive));
         OnPropertyChanged(nameof(IsNodesActive));
         OnPropertyChanged(nameof(IsManualQueueActive));
         OnPropertyChanged(nameof(IsSettingsActive));
+        OnPropertyChanged(nameof(IsExtensionsActive));
         OnPropertyChanged(nameof(ManualQueueEmptyVisibility));
         OnPropertyChanged(nameof(WorkerInboxEmptyVisibility));
         OnPropertyChanged(nameof(ApiBaseUrlLabel));

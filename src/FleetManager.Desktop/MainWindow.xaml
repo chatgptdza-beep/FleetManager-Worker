@@ -204,6 +204,12 @@
                                                 Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Settings}">
                                             <TextBlock Text="System Settings" />
                                         </Button>
+                                        <Button Style="{StaticResource SidebarButtonStyle}" Tag="Extensions" Click="Nav_Click"
+                                                Background="{Binding CurrentView, Converter={StaticResource EqBrush}, ConverterParameter=Extensions}"
+                                                BorderBrush="{Binding CurrentView, Converter={StaticResource EqBorder}, ConverterParameter=Extensions}"
+                                                Foreground="{Binding CurrentView, Converter={StaticResource EqFg}, ConverterParameter=Extensions}">
+                                            <TextBlock Text="Extension Manager" />
+                                        </Button>
                                     </StackPanel>
                                 </StackPanel>
                             </DockPanel>
@@ -779,37 +785,6 @@
                                                 </StackPanel>
                                             </Border>
 
-                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
-                                                <StackPanel>
-                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="MANAGED BROWSER EXTENSION" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Paste an unpacked extension folder path, manifest.json path, or a .zip package. FleetManager will publish it to GitHub Releases, then roll it out to every connected VPS in the fleet." />
-
-                                                    <TextBlock Margin="0,12,0,0" Foreground="#8FA0AA" FontSize="11" FontWeight="SemiBold" Text="LATEST GITHUB RELEASE URL" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionReleaseUrlLabel}" />
-
-                                                    <TextBlock Margin="0,12,0,0" Foreground="#8FA0AA" FontSize="11" FontWeight="SemiBold" Text="REMOTE INSTALL PATH" />
-                                                    <TextBlock Margin="0,6,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionInstallPathLabel}" />
-
-                                                    <Border Margin="0,12,0,0" Height="42" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
-                                                        <TextBox Margin="14,0"
-                                                                 Background="Transparent"
-                                                                 BorderThickness="0"
-                                                                 VerticalContentAlignment="Center"
-                                                                 Foreground="#F8F5F1"
-                                                                 CaretBrush="#F8F5F1"
-                                                                 Text="{Binding BrowserExtensionSourcePathInput, UpdateSourceTrigger=PropertyChanged}"
-                                                                 ToolTip="Paste a folder path, manifest.json path, or .zip package path." />
-                                                    </Border>
-
-                                                    <WrapPanel Margin="0,12,0,0" Orientation="Horizontal">
-                                                        <Button Margin="0,0,8,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="BrowseBrowserExtensionSource_Click" Content="Browse File" />
-                                                        <Button Margin="0,0,8,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="PublishAndDeployBrowserExtension_Click" Content="Publish + Deploy Fleet" />
-                                                        <Button Margin="0,0,0,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="DeployLatestBrowserExtension_Click" Content="Deploy Latest GitHub" />
-                                                    </WrapPanel>
-
-                                                    <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="GitHub publishing requires FLEETMANAGER_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN on this desktop. Any new VPS added after this will also receive the latest published managed extension automatically." />
-                                                </StackPanel>
-                                            </Border>
                                         </StackPanel>
                                     </Border>
 
@@ -826,6 +801,89 @@
                                                 <Button Style="{StaticResource GhostButtonStyle}" Height="38" Margin="0,0,0,8" Click="CopyWorkerConfig_Click" Content="📋  Copy Worker Config" HorizontalContentAlignment="Center" />
                                                 <Button Style="{StaticResource PrimaryButtonStyle}" Height="38" Click="CopyInstallCommand_Click" Content="📋  Copy Install Command" HorizontalContentAlignment="Center" />
                                             </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- EXTENSIONS VIEW -->
+                                <Grid Visibility="{Binding ExtensionsViewVisibility}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="1.2*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="0.8*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Managed Browser Extension" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="Publish a local extension path or zip to GitHub Releases, then roll it out to every VPS connected to this fleet." />
+
+                                            <Border Margin="0,18,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="LOCAL EXTENSION SOURCE" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Paste an unpacked folder path, a manifest.json path, or a .zip package path." />
+                                                    <Border Margin="0,12,0,0" Height="42" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
+                                                        <TextBox Margin="14,0"
+                                                                 Background="Transparent"
+                                                                 BorderThickness="0"
+                                                                 VerticalContentAlignment="Center"
+                                                                 Foreground="#F8F5F1"
+                                                                 CaretBrush="#F8F5F1"
+                                                                 Text="{Binding BrowserExtensionSourcePathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                                 ToolTip="Paste a folder path, manifest.json path, or .zip package path." />
+                                                    </Border>
+                                                    <WrapPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="BrowseBrowserExtensionSource_Click" Content="Browse File" />
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="PublishAndDeployBrowserExtension_Click" Content="Publish + Deploy Fleet" />
+                                                        <Button Margin="0,0,0,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="DeployLatestBrowserExtension_Click" Content="Deploy Latest GitHub" />
+                                                    </WrapPanel>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="LATEST GITHUB RELEASE URL" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionReleaseUrlLabel}" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="REMOTE INSTALL PATH" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionInstallPathLabel}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
+                                        <StackPanel>
+                                            <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Fleet Rollout" />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="This page is dedicated to extension rollout only. Use it whenever you want to publish, update, or redeploy the managed browser extension." />
+
+                                            <Border Margin="0,18,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="CONNECTED VPS NODES" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="20" FontWeight="Bold" Text="{Binding ConnectedNodesSummary}" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Any VPS added after this will also try to receive the latest published extension automatically." />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="CURRENT API SOURCE" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding SourceBanner}" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="ROLL OUT NOTES" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="GitHub publishing from this page requires FLEETMANAGER_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN on this desktop." />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="The VPS nodes do not read the extension from your PC. They always download the managed bundle from GitHub Releases." />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="If the current API host is still legacy, run Self Update Stack once after saving SSH credentials in Node Registry." />
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </Border>
                                 </Grid>
