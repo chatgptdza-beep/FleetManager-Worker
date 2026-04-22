@@ -6,10 +6,41 @@ namespace FleetManager.Desktop;
 
 public partial class InstallConsoleWindow : Window
 {
+    private string _progressHeaderPrefix = "Installing FleetManager Agent...";
+    private string _successHeaderText = "Agent Installed Successfully";
+    private string _successStatusText = "Installation complete.";
+    private string _failureHeaderText = "Installation Failed";
+
     public InstallConsoleWindow()
     {
         InitializeComponent();
         UpdateProgress(0);
+    }
+
+    public void ConfigureMode(
+        string windowTitle,
+        string progressHeaderPrefix,
+        string successHeaderText,
+        string successStatusText,
+        string? failureHeaderText = null)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => ConfigureMode(
+                windowTitle,
+                progressHeaderPrefix,
+                successHeaderText,
+                successStatusText,
+                failureHeaderText));
+            return;
+        }
+
+        Title = windowTitle;
+        _progressHeaderPrefix = progressHeaderPrefix;
+        _successHeaderText = successHeaderText;
+        _successStatusText = successStatusText;
+        _failureHeaderText = string.IsNullOrWhiteSpace(failureHeaderText) ? "Installation Failed" : failureHeaderText.Trim();
+        UpdateProgress((int)InstallProgress.Value);
     }
 
     public void AppendLog(string message)
@@ -46,9 +77,9 @@ public partial class InstallConsoleWindow : Window
         }
 
         UpdateProgress(100);
-        HeaderText.Text = "Agent Installed Successfully";
+        HeaderText.Text = _successHeaderText;
         HeaderText.Foreground = new SolidColorBrush(Color.FromRgb(0x47, 0xC1, 0xA8));
-        StatusText.Text = "Installation complete.";
+        StatusText.Text = _successStatusText;
         CloseBtn.IsEnabled = true;
     }
 
@@ -61,7 +92,7 @@ public partial class InstallConsoleWindow : Window
         }
 
         UpdateProgress(100);
-        HeaderText.Text = "Installation Failed";
+        HeaderText.Text = _failureHeaderText;
         HeaderText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
         InstallProgress.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B));
         StatusText.Text = $"Error: {error}";
@@ -75,7 +106,7 @@ public partial class InstallConsoleWindow : Window
         InstallProgress.IsIndeterminate = false;
         InstallProgress.Value = clamped;
         ProgressPercentText.Text = $"{clamped}%";
-        HeaderText.Text = $"Installing FleetManager Agent... {clamped}%";
+        HeaderText.Text = $"{_progressHeaderPrefix} {clamped}%";
     }
 
     private static bool TryParseProgress(string message, out int pct)

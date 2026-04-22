@@ -20,6 +20,7 @@ public static class CommandAllowlist
         "ReloadApprovedConfig",
         "UpdateAgentPackage",
         "UpdateNodeStack",
+        "UpdateBrowserExtensions",
         "LoginWorkflow",
         "StartAutomation",
         "StopAutomation",

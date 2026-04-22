@@ -36,6 +36,21 @@ public sealed class GitHubReleaseAssetResolverTests
     }
 
     [Fact]
+    public void TryBuildReleaseAssetUrl_builds_url_for_browser_extension_release_assets()
+    {
+        var built = GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            "https://github.com/chatgptdza-beep/FleetManager-Worker.git",
+            FleetManagerReleaseDefaults.BrowserExtensionBundleReleaseTag,
+            FleetManagerReleaseDefaults.BrowserExtensionBundleFileName,
+            out var assetUrl);
+
+        Assert.True(built);
+        Assert.Equal(
+            "https://github.com/chatgptdza-beep/FleetManager-Worker/releases/download/browser-extension-latest/fleetmanager-browser-extension-bundle.zip",
+            assetUrl);
+    }
+
+    [Fact]
     public void TryBuildReleaseAssetUrl_builds_url_for_ssh_repository_format()
     {
         var built = GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(

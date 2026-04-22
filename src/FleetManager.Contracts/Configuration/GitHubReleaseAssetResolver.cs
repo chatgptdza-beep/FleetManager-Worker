@@ -9,6 +9,9 @@ public static class FleetManagerReleaseDefaults
     public const string ApiBundleReleaseTag = "api-bundle-latest";
     public const string ApiBundleFileName = "fleetmanager-api-bundle-linux-x64.zip";
     public const string ApiBundleSha256FileName = ApiBundleFileName + ".sha256";
+    public const string BrowserExtensionBundleReleaseTag = "browser-extension-latest";
+    public const string BrowserExtensionBundleFileName = "fleetmanager-browser-extension-bundle.zip";
+    public const string BrowserExtensionBundleSha256FileName = BrowserExtensionBundleFileName + ".sha256";
 }
 
 public static class GitHubReleaseAssetResolver

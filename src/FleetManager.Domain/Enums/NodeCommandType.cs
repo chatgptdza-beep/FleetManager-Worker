@@ -20,5 +20,6 @@ public enum NodeCommandType
     StopAutomation = 15,
     PauseAutomation = 16,
     RefreshProxyPool = 17,
-    TakeoverComplete = 18
+    TakeoverComplete = 18,
+    UpdateBrowserExtensions = 19
 }

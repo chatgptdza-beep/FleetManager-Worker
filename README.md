@@ -103,6 +103,12 @@ $env:FLEETMANAGER_API_BUNDLE_RELEASE_TAG = "api-bundle-latest"
 $env:FLEETMANAGER_API_BUNDLE_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip"
 $env:FLEETMANAGER_API_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip.sha256"
 $env:FLEETMANAGER_API_BUNDLE_SHA256 = "<optional literal sha256 override>"
+$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_RELEASE_TAG = "browser-extension-latest"
+$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_URL = "https://github.com/owner/repo/releases/download/browser-extension-latest/fleetmanager-browser-extension-bundle.zip"
+$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/browser-extension-latest/fleetmanager-browser-extension-bundle.zip.sha256"
+$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256 = "<optional literal sha256 override>"
+$env:FLEETMANAGER_BROWSER_EXTENSION_INSTALL_PATH = "/opt/fleetmanager-agent/extensions/fleet-managed-extension"
+$env:FLEETMANAGER_GITHUB_TOKEN = "<token with repo contents:write>"
 ```
 
 If `FLEETMANAGER_AGENT_BUNDLE_PATH` is set, the Desktop uploads that file directly and skips the GitHub download path.
@@ -110,6 +116,23 @@ If `FLEETMANAGER_AGENT_BUNDLE_PATH` is set, the Desktop uploads that file direct
 ## Self Update
 
 The selected node now exposes `Self Update Stack` in the Desktop UI. The command downloads the latest agent bundle from `agent-bundle-latest`, updates the installed worker command set, and, when the node also hosts `FleetManager.Api`, stages the latest API bundle from `api-bundle-latest` and restarts both services without SSH.
+
+## Managed Browser Extension Rollout
+
+The Desktop now supports a GitHub-backed managed browser extension pipeline:
+
+1. Paste a local unpacked extension folder path, a `manifest.json` path, or a `.zip` package into `System Settings`.
+2. Click `Publish + Deploy Fleet`.
+3. The Desktop normalizes the extension, uploads `fleetmanager-browser-extension-bundle.zip` plus its `.sha256` file to the stable GitHub Release tag `browser-extension-latest`, and then dispatches `UpdateBrowserExtensions` to every VPS currently visible in the fleet.
+4. Each worker downloads the published bundle from GitHub Releases directly on the VPS, verifies the checksum, installs it into `/opt/fleetmanager-agent/extensions/fleet-managed-extension`, and rewrites `Agent.BrowserExtensions` plus the systemd `FM_BROWSER_EXTENSIONS` override.
+5. Any VPS added later will automatically receive the latest published managed extension after its first heartbeat.
+
+Notes:
+
+- Publishing from the Desktop requires `FLEETMANAGER_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`.
+- Deployment from the VPS does not use your desktop file system. Nodes always download the managed extension from GitHub Releases.
+- `Deploy Latest GitHub` skips local publishing and only rolls out the already-published GitHub Release asset to the fleet.
+- If the current API host is still on a legacy build, save its SSH credentials in `Node Registry` once and rerun the rollout. The Desktop will bootstrap that API host automatically before retrying.
 
 Manual publish example:
 
@@ -186,40 +209,15 @@ Example:
 }
 ```
 
-## QuickReserve Extension Rollout (New VPS)
+## Legacy Per-VPS Extension Script
 
-The agent now supports VPS-wide unpacked browser extensions through `Agent.BrowserExtensions` and `FM_BROWSER_EXTENSIONS`.
-`StartBrowser.sh` stages each extension into the account profile and launches Chromium with:
+The older `scripts/setup-vps-extension-and-launcher-bridge.ps1` flow is still present for manual one-off SSH work, but it is no longer the primary deployment path.
+The professional path is now:
 
-- `--disable-extensions-except=<staged_paths>`
-- `--load-extension=<staged_paths>`
-
-Use the automation script below when adding a new VPS so extension setup is reproducible and GitHub-backed:
-
-```powershell
-.\scripts\setup-vps-extension-and-launcher-bridge.ps1 `
-  -VpsIp <vps-ip> `
-  -RootPassword '<root-password>' `
-  -LocalExtensionPath 'C:\Users\<you>\Desktop\QuickReserve\QuickReserve Loader' `
-  -StartLauncherTunnel
-```
-
-What this script does:
-
-- Uploads the unpacked extension to `/opt/fleetmanager-agent/extensions/quickreserve-loader`.
-- Normalizes nested folder layouts and verifies `manifest.json` on VPS.
-- Writes `Agent.BrowserExtensions` in `/opt/fleetmanager-agent/appsettings.json`.
-- Writes systemd override `FM_BROWSER_EXTENSIONS=...` for immediate runtime parity.
-- Restarts `fleetmanager-agent` and verifies service health.
-- Optionally starts local reverse tunnel to VPS for Launcher localhost ports.
-
-Default Launcher bridge ports are:
-
-- `45321`
-- `65430`
-- `65475`
-
-These can be overridden with `-LauncherPorts`.
+- local extension path or zip on the Desktop
+- publish to GitHub Release `browser-extension-latest`
+- dispatch `UpdateBrowserExtensions`
+- each VPS downloads and installs the extension directly from GitHub Releases
 
 ## Capacity Notes (50 Browsers)
 

@@ -31,6 +31,11 @@ internal static class DesktopEnvironment
             FleetManagerReleaseDefaults.ApiBundleReleaseTag,
             "FLEETMANAGER_API_BUNDLE_RELEASE_TAG") ?? string.Empty;
 
+    public static string ResolveBrowserExtensionBundleReleaseTag()
+        => ResolveFirstNonEmpty(
+            FleetManagerReleaseDefaults.BrowserExtensionBundleReleaseTag,
+            "FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_RELEASE_TAG") ?? string.Empty;
+
     public static string ResolveAgentBundleUrl()
     {
         var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_URL");
@@ -99,6 +104,40 @@ internal static class DesktopEnvironment
             : string.Empty;
     }
 
+    public static string ResolveBrowserExtensionBundleUrl()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveBrowserExtensionBundleReleaseTag(),
+            FleetManagerReleaseDefaults.BrowserExtensionBundleFileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
+    public static string ResolveBrowserExtensionBundleSha256Url()
+    {
+        var explicitUrl = ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+        {
+            return explicitUrl.Trim();
+        }
+
+        return GitHubReleaseAssetResolver.TryBuildReleaseAssetUrl(
+            ResolveRepositoryUrl(),
+            ResolveBrowserExtensionBundleReleaseTag(),
+            FleetManagerReleaseDefaults.BrowserExtensionBundleSha256FileName,
+            out var bundleUrl)
+            ? bundleUrl
+            : string.Empty;
+    }
+
     public static string? ResolveAgentBundlePathOverride()
         => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_AGENT_BUNDLE_PATH");
 
@@ -107,6 +146,21 @@ internal static class DesktopEnvironment
 
     public static string? ResolveApiBundleSha256()
         => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_API_BUNDLE_SHA256");
+
+    public static string? ResolveBrowserExtensionBundleSha256()
+        => ResolveFirstNonEmpty(defaultValue: null, "FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256");
+
+    public static string ResolveManagedBrowserExtensionInstallPath()
+        => ResolveFirstNonEmpty(
+            "/opt/fleetmanager-agent/extensions/fleet-managed-extension",
+            "FLEETMANAGER_BROWSER_EXTENSION_INSTALL_PATH") ?? string.Empty;
+
+    public static string ResolveGitHubAccessToken()
+        => ResolveFirstNonEmpty(
+            defaultValue: null,
+            "FLEETMANAGER_GITHUB_TOKEN",
+            "GH_TOKEN",
+            "GITHUB_TOKEN") ?? string.Empty;
 
     public static bool ShouldPersistSshCredentials()
     {

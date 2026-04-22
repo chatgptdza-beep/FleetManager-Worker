@@ -39,6 +39,7 @@ public sealed class MainWindowViewModel : ViewModelBase
     private string _searchText = string.Empty;
     private string _statusMessage = "Loading dashboard...";
     private string _apiBaseUrlInput = string.Empty;
+    private string _browserExtensionSourcePathInput = string.Empty;
     private string _focusedViewerUrl = string.Empty;
     private string _focusedViewerMessage = "Request a viewer session to see the viewer URL here.";
     private bool _showWorkerInboxHistory;
@@ -159,6 +160,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         set => SetProperty(ref _apiBaseUrlInput, value);
     }
 
+    public string BrowserExtensionSourcePathInput
+    {
+        get => _browserExtensionSourcePathInput;
+        set => SetProperty(ref _browserExtensionSourcePathInput, value);
+    }
+
     public string StatusMessage
     {
         get => _statusMessage;
@@ -193,6 +200,10 @@ public sealed class MainWindowViewModel : ViewModelBase
     public string SourceBanner => _dataService.HasConfiguredBaseUrl
         ? $"API: {_dataService.CurrentBaseUrl}"
         : "API: not configured";
+    public string BrowserExtensionReleaseUrlLabel
+        => DesktopEnvironment.ResolveBrowserExtensionBundleUrl();
+    public string BrowserExtensionInstallPathLabel
+        => DesktopEnvironment.ResolveManagedBrowserExtensionInstallPath();
     public string AccountsPanelTitle => "Accounts By VPS";
     public string SelectedNodeTableSummary => SelectedNode is null
         ? "Current view: select a VPS tab to inspect assigned accounts."
@@ -253,20 +264,23 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     private readonly ISshProvisioningService _sshProvisioningService;
     private readonly IDesktopNodeRegistry _nodeRegistry;
+    private readonly IBrowserExtensionReleaseService _browserExtensionReleaseService;
 
     public MainWindowViewModel()
-        : this(new DashboardDataService(), new SshProvisioningService(), new DesktopNodeRegistry())
+        : this(new DashboardDataService(), new SshProvisioningService(), new DesktopNodeRegistry(), new BrowserExtensionReleaseService())
     {
     }
 
     public MainWindowViewModel(
         IDashboardDataService dataService,
         ISshProvisioningService sshProvisioningService,
-        IDesktopNodeRegistry nodeRegistry)
+        IDesktopNodeRegistry nodeRegistry,
+        IBrowserExtensionReleaseService browserExtensionReleaseService)
     {
         _dataService = dataService;
         _sshProvisioningService = sshProvisioningService;
         _nodeRegistry = nodeRegistry;
+        _browserExtensionReleaseService = browserExtensionReleaseService;
         _apiBaseUrlInput = _dataService.CurrentBaseUrl;
     }
 
@@ -654,6 +668,214 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
     }
 
+    public async Task PublishAndDeployBrowserExtensionAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        progress?.Report("%02");
+        progress?.Report("Publishing managed browser extension to GitHub Releases...");
+        var publishedRelease = await _browserExtensionReleaseService.PublishAsync(
+            BrowserExtensionSourcePathInput,
+            progress,
+            cancellationToken);
+
+        progress?.Report("%60");
+        progress?.Report("GitHub Release updated. Rolling out the managed browser extension to the fleet...");
+        await DeployManagedBrowserExtensionReleaseAsync(
+            publishedRelease,
+            Nodes.ToList(),
+            progress,
+            cancellationToken);
+    }
+
+    public async Task DeployLatestBrowserExtensionAsync(
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        progress?.Report("%04");
+        progress?.Report("Resolving the latest managed browser extension from GitHub Releases...");
+        var publishedRelease = await _browserExtensionReleaseService.TryGetPublishedReleaseAsync(cancellationToken)
+            ?? throw new InvalidOperationException(
+                "No published managed browser extension release is available yet. Publish a local zip, manifest.json, or extension folder first.");
+
+        progress?.Report("%10");
+        progress?.Report($"Using GitHub Release asset: {publishedRelease.BundleUrl}");
+        await DeployManagedBrowserExtensionReleaseAsync(
+            publishedRelease,
+            Nodes.ToList(),
+            progress,
+            cancellationToken);
+    }
+
+    private async Task DeployManagedBrowserExtensionReleaseAsync(
+        PublishedBrowserExtensionRelease release,
+        IReadOnlyCollection<NodeCardViewModel> targetNodes,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken,
+        bool allowLegacyApiBootstrap = true,
+        int progressFloor = 60,
+        int progressCeiling = 98)
+    {
+        if (targetNodes.Count == 0)
+        {
+            throw new InvalidOperationException("No VPS nodes are available in the current fleet.");
+        }
+
+        var distinctTargets = targetNodes
+            .GroupBy(node => node.NodeId)
+            .Select(group => group.First())
+            .OrderBy(node => node.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var payload = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["bundleUrl"] = release.BundleUrl,
+            ["bundleSha256Url"] = release.BundleSha256Url,
+            ["bundleSha256"] = string.IsNullOrWhiteSpace(release.BundleSha256) ? null : release.BundleSha256,
+            ["installPath"] = release.InstallPath,
+            ["restartDelaySeconds"] = 6,
+            ["displayName"] = release.DisplayName,
+            ["version"] = release.Version
+        });
+
+        var dispatchedCommands = new List<(NodeCardViewModel Node, Guid CommandId)>();
+        var failures = new List<string>();
+        var progressRange = Math.Max(1, progressCeiling - progressFloor);
+        var dispatchSpan = Math.Max(1, (int)Math.Round(progressRange * 0.4d));
+        var waitSpan = Math.Max(1, progressRange - dispatchSpan);
+
+        for (var index = 0; index < distinctTargets.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var node = distinctTargets[index];
+            var dispatchPercent = Math.Min(
+                progressCeiling,
+                progressFloor + (int)Math.Round(((index + 1d) / distinctTargets.Count) * dispatchSpan));
+            progress?.Report($"%{dispatchPercent:00}");
+            progress?.Report($"[{index + 1}/{distinctTargets.Count}] Dispatching managed browser extension update to {node.Name} ({node.IpAddress})...");
+
+            try
+            {
+                var commandId = await _dataService.DispatchNodeCommandAsync(node.NodeId, new DispatchNodeCommandRequest
+                {
+                    CommandType = "UpdateBrowserExtensions",
+                    PayloadJson = payload
+                }, cancellationToken);
+
+                if (!commandId.HasValue)
+                {
+                    failures.Add($"{node.Name}: command dispatch returned no command id.");
+                    continue;
+                }
+
+                dispatchedCommands.Add((node, commandId.Value));
+            }
+            catch (InvalidOperationException ex) when (allowLegacyApiBootstrap && LooksLikeLegacyBrowserExtensionDispatchFailure(ex))
+            {
+                var currentApiHost = Nodes.FirstOrDefault(IsCurrentApiHost);
+                if (currentApiHost is not null
+                    && await TryBootstrapLegacyCurrentApiHostAsync(currentApiHost, progress, cancellationToken))
+                {
+                    progress?.Report("%72");
+                    progress?.Report("Legacy API host bootstrapped successfully. Retrying managed browser extension rollout...");
+                    await DeployManagedBrowserExtensionReleaseAsync(
+                        release,
+                        distinctTargets,
+                        progress,
+                        cancellationToken,
+                        allowLegacyApiBootstrap: false,
+                        progressFloor: progressFloor,
+                        progressCeiling: progressCeiling);
+                    return;
+                }
+
+                throw new InvalidOperationException(
+                    "The current FleetManager API host is still on a legacy build and does not expose UpdateBrowserExtensions yet. " +
+                    "Save SSH credentials for the API VPS in Node Registry and run Self Update Stack once, then retry the managed browser extension rollout.");
+            }
+        }
+
+        if (dispatchedCommands.Count == 0)
+        {
+            throw new InvalidOperationException(
+                failures.Count == 0
+                    ? "No browser extension rollout commands were dispatched."
+                    : $"Browser extension rollout could not start. {string.Join(" | ", failures)}");
+        }
+
+        for (var index = 0; index < dispatchedCommands.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var (node, commandId) = dispatchedCommands[index];
+            var waitPercent = Math.Min(
+                progressCeiling,
+                progressFloor + dispatchSpan + (int)Math.Round(((index + 1d) / dispatchedCommands.Count) * waitSpan));
+            progress?.Report($"%{waitPercent:00}");
+            progress?.Report($"Waiting for {node.Name} to finish installing the managed browser extension...");
+
+            var command = await WaitForCommandResultAsync(node.NodeId, commandId);
+            if (command is null)
+            {
+                failures.Add($"{node.Name}: UpdateBrowserExtensions did not return a status update.");
+                continue;
+            }
+
+            if (command.Status is "Failed" or "TimedOut")
+            {
+                failures.Add($"{node.Name}: {command.ResultMessage?.Trim() ?? "UpdateBrowserExtensions failed."}");
+                continue;
+            }
+
+            progress?.Report($"{node.Name}: {command.ResultMessage?.Trim() ?? "Managed browser extension updated."}");
+        }
+
+        await ReloadAsync(SelectedNode?.NodeId);
+
+        var successCount = distinctTargets.Count - failures.Count;
+        if (failures.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Managed browser extension rolled out to {successCount}/{distinctTargets.Count} VPS nodes. " +
+                $"Failures: {string.Join(" | ", failures)}");
+        }
+
+        StatusMessage = $"Managed browser extension deployed to {successCount} VPS node(s) from GitHub Releases. | {SourceBanner}";
+        progress?.Report($"%{progressCeiling:00}");
+        progress?.Report($"Managed browser extension deployed successfully to {successCount} VPS node(s).");
+    }
+
+    private async Task TryAutoDeployManagedBrowserExtensionToNodeAsync(
+        NodeSummaryResponse createdNode,
+        IProgress<string>? installProgress,
+        CancellationToken cancellationToken)
+    {
+        var publishedRelease = await _browserExtensionReleaseService.TryGetPublishedReleaseAsync(cancellationToken);
+        if (publishedRelease is null)
+        {
+            return;
+        }
+
+        var targetNode = Nodes.FirstOrDefault(node => node.NodeId == createdNode.Id)
+            ?? NodeCardViewModel.FromContract(createdNode);
+
+        installProgress?.Report("Managed browser extension release found on GitHub. Queuing it for the new VPS...");
+
+        try
+        {
+            await DeployManagedBrowserExtensionReleaseAsync(
+                publishedRelease,
+                new[] { targetNode },
+                installProgress,
+                cancellationToken,
+                progressFloor: 96,
+                progressCeiling: 98);
+        }
+        catch (Exception ex)
+        {
+            installProgress?.Report($"Managed browser extension rollout skipped for the new VPS: {ex.Message}");
+        }
+    }
+
     public async Task AcknowledgeWorkerInboxEventAsync(WorkerInboxEventViewModel workerEvent)
     {
         var acknowledged = await _dataService.AcknowledgeWorkerInboxEventAsync(workerEvent.EventId);
@@ -761,6 +983,8 @@ public sealed class MainWindowViewModel : ViewModelBase
             // The agent heartbeat will maintain the status going forward.
             installProgress?.Report("Updating node status to Online...");
             await _dataService.UpdateNodeStatusAsync(created.Id, "Online");
+
+            await TryAutoDeployManagedBrowserExtensionToNodeAsync(created, installProgress, cancellationToken);
             installProgress?.Report("%98");
 
             await ReloadAsync(created.Id);
@@ -1631,7 +1855,10 @@ public sealed class MainWindowViewModel : ViewModelBase
             && string.Equals(apiUri.Host, node.IpAddress.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
-    private async Task<bool> TryBootstrapLegacyCurrentApiHostAsync(NodeCardViewModel node)
+    private async Task<bool> TryBootstrapLegacyCurrentApiHostAsync(
+        NodeCardViewModel node,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var managedNode = await _nodeRegistry.GetByRemoteNodeIdAsync(node.NodeId);
         if (managedNode is null || !managedNode.HasStoredCredentials)
@@ -1640,18 +1867,19 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
 
         var connectionRequest = _nodeRegistry.BuildConnectionRequest(managedNode);
-        var progress = new Progress<string>(message =>
+        var bootstrapProgress = new Progress<string>(message =>
         {
             Application.Current?.Dispatcher?.Invoke(() =>
             {
                 StatusMessage = $"Legacy bootstrap: {message}";
             });
+            progress?.Report($"Legacy bootstrap: {message}");
         });
 
         await DisconnectSignalRAsync();
-        await _sshProvisioningService.InstallApiAsync(connectionRequest, progress);
-        await _sshProvisioningService.InstallAgentAsync(connectionRequest, _dataService.CurrentBaseUrl, progress);
-        await _sshProvisioningService.ConfigureAgentAsync(connectionRequest, node.NodeId, _dataService.CurrentBaseUrl, progress);
+        await _sshProvisioningService.InstallApiAsync(connectionRequest, bootstrapProgress, cancellationToken);
+        await _sshProvisioningService.InstallAgentAsync(connectionRequest, _dataService.CurrentBaseUrl, bootstrapProgress, cancellationToken);
+        await _sshProvisioningService.ConfigureAgentAsync(connectionRequest, node.NodeId, _dataService.CurrentBaseUrl, bootstrapProgress, cancellationToken);
         await Task.Delay(2000);
         await ReloadAsync(node.NodeId);
         await TryConnectSignalRAsync();
@@ -1665,6 +1893,9 @@ public sealed class MainWindowViewModel : ViewModelBase
     private static bool LooksLikeMissingLegacyWorkerUpdateScript(InvalidOperationException exception)
         => exception.Message.Contains("UpdateAgentPackage.sh", StringComparison.OrdinalIgnoreCase)
            || exception.Message.Contains("Script not found", StringComparison.OrdinalIgnoreCase);
+
+    private static bool LooksLikeLegacyBrowserExtensionDispatchFailure(InvalidOperationException exception)
+        => exception.Message.StartsWith("Dispatch of UpdateBrowserExtensions failed", StringComparison.OrdinalIgnoreCase);
 
     private async Task LoadNodesAsync()
     {
@@ -1910,6 +2141,8 @@ public sealed class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(WorkerInboxEmptyMessage));
         OnPropertyChanged(nameof(AccountsGroupLabel));
         OnPropertyChanged(nameof(SourceBanner));
+        OnPropertyChanged(nameof(BrowserExtensionReleaseUrlLabel));
+        OnPropertyChanged(nameof(BrowserExtensionInstallPathLabel));
         OnPropertyChanged(nameof(SelectedNodeTableSummary));
         OnPropertyChanged(nameof(SelectedNodePanelTitle));
         OnPropertyChanged(nameof(SelectedNodePanelSummary));

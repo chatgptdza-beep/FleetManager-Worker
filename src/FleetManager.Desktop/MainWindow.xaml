@@ -778,6 +778,38 @@
                                                     <Button Margin="0,12,0,0" Style="{StaticResource PrimaryButtonStyle}" Height="38" Click="ManageLocalNodes_Click" Content="Open Node Registry" HorizontalContentAlignment="Center" />
                                                 </StackPanel>
                                             </Border>
+
+                                            <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
+                                                <StackPanel>
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="MANAGED BROWSER EXTENSION" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Paste an unpacked extension folder path, manifest.json path, or a .zip package. FleetManager will publish it to GitHub Releases, then roll it out to every connected VPS in the fleet." />
+
+                                                    <TextBlock Margin="0,12,0,0" Foreground="#8FA0AA" FontSize="11" FontWeight="SemiBold" Text="LATEST GITHUB RELEASE URL" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionReleaseUrlLabel}" />
+
+                                                    <TextBlock Margin="0,12,0,0" Foreground="#8FA0AA" FontSize="11" FontWeight="SemiBold" Text="REMOTE INSTALL PATH" />
+                                                    <TextBlock Margin="0,6,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionInstallPathLabel}" />
+
+                                                    <Border Margin="0,12,0,0" Height="42" Background="#111B24" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="12">
+                                                        <TextBox Margin="14,0"
+                                                                 Background="Transparent"
+                                                                 BorderThickness="0"
+                                                                 VerticalContentAlignment="Center"
+                                                                 Foreground="#F8F5F1"
+                                                                 CaretBrush="#F8F5F1"
+                                                                 Text="{Binding BrowserExtensionSourcePathInput, UpdateSourceTrigger=PropertyChanged}"
+                                                                 ToolTip="Paste a folder path, manifest.json path, or .zip package path." />
+                                                    </Border>
+
+                                                    <WrapPanel Margin="0,12,0,0" Orientation="Horizontal">
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="BrowseBrowserExtensionSource_Click" Content="Browse File" />
+                                                        <Button Margin="0,0,8,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="PublishAndDeployBrowserExtension_Click" Content="Publish + Deploy Fleet" />
+                                                        <Button Margin="0,0,0,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="DeployLatestBrowserExtension_Click" Content="Deploy Latest GitHub" />
+                                                    </WrapPanel>
+
+                                                    <TextBlock Margin="0,4,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="GitHub publishing requires FLEETMANAGER_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN on this desktop. Any new VPS added after this will also receive the latest published managed extension automatically." />
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </Border>
 

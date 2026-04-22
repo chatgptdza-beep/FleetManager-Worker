@@ -638,6 +638,43 @@ public partial class MainWindow : Window
         }
     }
 
+    private void BrowseBrowserExtensionSource_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Filter = "Extension package (*.zip)|*.zip|Extension manifest (manifest.json)|manifest.json|All files (*.*)|*.*",
+            CheckFileExists = true,
+            Title = "Select extension zip or manifest.json"
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            _viewModel.BrowserExtensionSourcePathInput = dialog.FileName;
+        }
+    }
+
+    private async void PublishAndDeployBrowserExtension_Click(object sender, RoutedEventArgs e)
+    {
+        await RunProgressConsoleActionAsync(
+            "Browser Extension Rollout",
+            "Publishing + deploying managed browser extension...",
+            "Managed Browser Extension Deployed",
+            "GitHub Release updated and fleet rollout completed.",
+            "Browser Extension Rollout Failed",
+            (progress, cancellationToken) => _viewModel.PublishAndDeployBrowserExtensionAsync(progress, cancellationToken));
+    }
+
+    private async void DeployLatestBrowserExtension_Click(object sender, RoutedEventArgs e)
+    {
+        await RunProgressConsoleActionAsync(
+            "Browser Extension Rollout",
+            "Deploying latest managed browser extension...",
+            "Managed Browser Extension Deployed",
+            "GitHub Release rollout completed.",
+            "Browser Extension Rollout Failed",
+            (progress, cancellationToken) => _viewModel.DeployLatestBrowserExtensionAsync(progress, cancellationToken));
+    }
+
     private async Task RunUiActionAsync(Func<Task> action)
     {
         try
@@ -647,6 +684,41 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             MessageBox.Show(this, ex.Message, "FleetManager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async Task RunProgressConsoleActionAsync(
+        string windowTitle,
+        string progressHeaderPrefix,
+        string successHeaderText,
+        string successStatusText,
+        string failureHeaderText,
+        Func<IProgress<string>, CancellationToken, Task> action)
+    {
+        var console = new InstallConsoleWindow { Owner = this };
+        console.ConfigureMode(windowTitle, progressHeaderPrefix, successHeaderText, successStatusText, failureHeaderText);
+        console.Show();
+
+        using var cts = new CancellationTokenSource();
+        var progress = new Progress<string>(console.AppendLog);
+
+        try
+        {
+            Mouse.OverrideCursor = Cursors.Wait;
+            await action(progress, cts.Token);
+            console.MarkSuccess();
+        }
+        catch (OperationCanceledException)
+        {
+            console.MarkFailed("Operation was cancelled.");
+        }
+        catch (Exception ex)
+        {
+            console.MarkFailed(ex.Message);
+        }
+        finally
+        {
+            Mouse.OverrideCursor = null;
         }
     }
 

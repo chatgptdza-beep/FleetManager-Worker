@@ -23,6 +23,7 @@ public partial class App : Application
     {
         // Data and provisioning
         services.AddSingleton<IDashboardDataService, DashboardDataService>();
+        services.AddSingleton<IBrowserExtensionReleaseService, BrowserExtensionReleaseService>();
         services.AddSingleton<ISshProvisioningService, SshProvisioningService>();
         services.AddSingleton<IDesktopNodeRegistry, DesktopNodeRegistry>();
         services.AddSingleton<ISshTunnelManager, SshTunnelManager>();
