@@ -21,6 +21,12 @@ public interface ISshProvisioningService
     /// Performs a lightweight SSH diagnostic against a locally registered node and reports whether
     /// the agent, API, or legacy docker worker are currently alive on the remote VPS.
     /// </summary>
+    Task<DesktopNodeDiagnosticResult> DiagnoseNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Performs a lightweight SSH diagnostic against a locally registered node using stored credentials only.
+    /// This is kept for callers that do not have a resolved connection request yet.
+    /// </summary>
     Task<DesktopNodeDiagnosticResult> DiagnoseNodeAsync(DesktopManagedNodeRecord node, CancellationToken cancellationToken = default);
 
     /// <summary>

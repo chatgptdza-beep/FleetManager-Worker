@@ -43,7 +43,9 @@ public partial class NodeRegistryWindow : Window
             {
                 try
                 {
-                    var diagnostic = await _sshProvisioning.DiagnoseNodeAsync(node);
+                    var diagnostic = _nodeRegistry.HasUsableCredentials(node)
+                        ? await _sshProvisioning.DiagnoseNodeAsync(_nodeRegistry.BuildConnectionRequest(node))
+                        : await _sshProvisioning.DiagnoseNodeAsync(node);
                     await _nodeRegistry.UpdateNodeHealthAsync(
                         node.WorkflowNodeId,
                         diagnostic.IsSshReachable ? DesktopManagedNodeStatus.RemoteReachable : DesktopManagedNodeStatus.ActionRequired,
@@ -118,7 +120,9 @@ public partial class NodeRegistryWindow : Window
         Mouse.OverrideCursor = Cursors.Wait;
         try
         {
-            var diagnostic = await _sshProvisioning.DiagnoseNodeAsync(node);
+            var diagnostic = _nodeRegistry.HasUsableCredentials(node)
+                ? await _sshProvisioning.DiagnoseNodeAsync(_nodeRegistry.BuildConnectionRequest(node))
+                : await _sshProvisioning.DiagnoseNodeAsync(node);
             await _nodeRegistry.UpdateNodeHealthAsync(
                 node.WorkflowNodeId,
                 diagnostic.IsSshReachable ? DesktopManagedNodeStatus.RemoteReachable : DesktopManagedNodeStatus.ActionRequired,

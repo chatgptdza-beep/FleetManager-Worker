@@ -86,17 +86,17 @@ public class SshProvisioningService : ISshProvisioningService
         }, cancellationToken);
     }
 
-    public async Task<DesktopNodeDiagnosticResult> DiagnoseNodeAsync(DesktopManagedNodeRecord node, CancellationToken cancellationToken = default)
+    public async Task<DesktopNodeDiagnosticResult> DiagnoseNodeAsync(CreateNodeRequest request, CancellationToken cancellationToken = default)
     {
         return await Task.Run(() =>
         {
-            var connectionInfo = CreateConnectionInfo(node);
+            var connectionInfo = CreateConnectionInfo(request);
             using var client = new SshClient(connectionInfo);
             try
             {
                 client.Connect();
                 var commandText = BuildDiagnosticCommand();
-                var command = client.CreateCommand(BuildElevatedCommand(node, commandText));
+                var command = client.CreateCommand(BuildElevatedCommand(request, commandText));
                 command.CommandTimeout = TimeSpan.FromSeconds(20);
                 var output = command.Execute();
                 var lines = output
@@ -114,7 +114,7 @@ public class SshProvisioningService : ISshProvisioningService
 
                 var detailParts = new List<string>
                 {
-                    $"SSH ok to {node.SshUsername}@{node.CurrentIp}:{node.SshPort}",
+                    $"SSH ok to {request.SshUsername}@{request.IpAddress}:{request.SshPort}",
                     $"agent={(agentActive ? "active" : "missing")}",
                     $"api={(apiActive ? "active" : "missing")}",
                     $"docker-worker={(dockerWorkerActive ? "active" : "missing")}"
@@ -134,7 +134,7 @@ public class SshProvisioningService : ISshProvisioningService
                 return new DesktopNodeDiagnosticResult
                 {
                     IsSshReachable = false,
-                    Detail = $"SSH failed for {node.CurrentIp}: {ex.Message}"
+                    Detail = $"SSH failed for {request.IpAddress}: {ex.Message}"
                 };
             }
             finally
@@ -346,6 +346,20 @@ public class SshProvisioningService : ISshProvisioningService
             client.Disconnect();
             progress?.Report("Agent installation finished successfully.");
         }, cancellationToken);
+    }
+
+    public Task<DesktopNodeDiagnosticResult> DiagnoseNodeAsync(DesktopManagedNodeRecord node, CancellationToken cancellationToken = default)
+    {
+        if (!node.HasStoredCredentials)
+        {
+            return Task.FromResult(new DesktopNodeDiagnosticResult
+            {
+                IsSshReachable = false,
+                Detail = $"SSH credentials are not available for {node.CurrentIp}. Re-enter the SSH password or key in Node Registry."
+            });
+        }
+
+        return DiagnoseNodeAsync(ToCreateNodeRequest(node), cancellationToken);
     }
 
     public async Task ConfigureAgentAsync(CreateNodeRequest request, Guid nodeId, string apiBaseUrl, IProgress<string>? progress = null, CancellationToken cancellationToken = default)

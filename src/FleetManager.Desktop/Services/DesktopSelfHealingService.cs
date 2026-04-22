@@ -126,7 +126,9 @@ public sealed class DesktopSelfHealingService(
         DesktopNodeDiagnosticResult diagnostic;
         try
         {
-            diagnostic = await sshProvisioningService.DiagnoseNodeAsync(node, cancellationToken);
+            diagnostic = nodeRegistry.HasUsableCredentials(node)
+                ? await sshProvisioningService.DiagnoseNodeAsync(nodeRegistry.BuildConnectionRequest(node), cancellationToken)
+                : await sshProvisioningService.DiagnoseNodeAsync(node, cancellationToken);
         }
         catch (Exception ex)
         {
