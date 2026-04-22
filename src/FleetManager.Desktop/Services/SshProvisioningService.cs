@@ -204,6 +204,7 @@ public class SshProvisioningService : ISshProvisioningService
                 progress?.Report("%23");
                 progress?.Report("[API 4/6] Deploying FleetManager.Api files...");
                 ExecuteStreaming(client, BuildElevatedCommand(request,
+                    $"systemctl stop {ApiServiceName} >/dev/null 2>&1 || true\n" +
                     $"rm -rf {ApiTempExtractPath} {ApiInstallDirectory}\n" +
                     $"mkdir -p {ApiTempExtractPath} {ApiInstallDirectory}\n" +
                     $"unzip -oq {ApiBundleRemotePath} -d {ApiTempExtractPath}\n" +

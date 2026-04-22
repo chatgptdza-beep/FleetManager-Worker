@@ -47,6 +47,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+prepare_in_place_update_target() {
+  local target_path="$1"
+  local backup_path="${target_path}.previous"
+
+  [[ -e "$backup_path" ]] && rm -rf "$backup_path"
+  [[ -e "$target_path" ]] && mv "$target_path" "$backup_path"
+}
+
 curl -fL "$BUNDLE_URL" -o "$BUNDLE_PATH"
 
 if [[ -n "$BUNDLE_SHA256" ]]; then
@@ -82,8 +90,11 @@ if [[ -f "$APPSETTINGS_PATH" ]]; then
 fi
 
 mkdir -p "$COMMANDS_DIR"
+prepare_in_place_update_target "$INSTALL_DIR/FleetManager.Agent"
+prepare_in_place_update_target "$INSTALL_DIR/FleetManager.Agent.dll"
 cp -a "$EXTRACT_DIR/agent/." "$INSTALL_DIR/"
 cp -a "$EXTRACT_DIR/deploy/linux/commands/." "$COMMANDS_DIR/"
+rm -rf "$INSTALL_DIR/FleetManager.Agent.previous" "$INSTALL_DIR/FleetManager.Agent.dll.previous"
 
 RUNNER_TEMPLATE_PATH="$EXTRACT_DIR/$RUNNER_TEMPLATE_RELATIVE_PATH"
 if [[ -f "$RUNNER_TEMPLATE_PATH" ]]; then

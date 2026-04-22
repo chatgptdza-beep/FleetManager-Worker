@@ -13,6 +13,14 @@ SERVICE_PATH="/etc/systemd/system/fleetmanager-agent.service"
 RUNNER_PATH="$INSTALL_DIR/run-agent.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+prepare_in_place_update_target() {
+  local target_path="$1"
+  local backup_path="${target_path}.previous"
+
+  [[ -e "$backup_path" ]] && rm -rf "$backup_path"
+  [[ -e "$target_path" ]] && mv "$target_path" "$backup_path"
+}
+
 wait_for_apt_locks() {
   local waited=0
   while fuser /var/lib/apt/lists/lock /var/lib/dpkg/lock-frontend /var/cache/apt/archives/lock >/dev/null 2>&1; do
@@ -110,9 +118,14 @@ if [[ -f "$PACKAGE_DIR/.fleetmanager.sha256" ]]; then
   )
 fi
 
+systemctl stop fleetmanager-agent.service >/dev/null 2>&1 || true
+prepare_in_place_update_target "$INSTALL_DIR/FleetManager.Agent"
+prepare_in_place_update_target "$INSTALL_DIR/FleetManager.Agent.dll"
+
 cp -R "$PACKAGE_DIR"/. "$INSTALL_DIR"/
 mkdir -p "$INSTALL_DIR/commands"
 cp -R "$SCRIPT_DIR/commands"/. "$INSTALL_DIR/commands"/
+rm -rf "$INSTALL_DIR/FleetManager.Agent.previous" "$INSTALL_DIR/FleetManager.Agent.dll.previous"
 
 if [[ ! -f "$INSTALL_DIR/appsettings.json" ]]; then
   cp "$SCRIPT_DIR/appsettings.agent.template.json" "$INSTALL_DIR/appsettings.json"
