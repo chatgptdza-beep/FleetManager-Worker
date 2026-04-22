@@ -1,9 +1,12 @@
+using System.Diagnostics;
 using FleetManager.Contracts.Configuration;
 
 namespace FleetManager.Desktop.Services;
 
 internal static class DesktopEnvironment
 {
+    private static string? _cachedGitHubAccessToken;
+
     public static string ResolveOperatorPassword()
         => ResolveFirstNonEmpty(
             FleetManagerDevDefaults.AdminPassword,
@@ -156,11 +159,27 @@ internal static class DesktopEnvironment
             "FLEETMANAGER_BROWSER_EXTENSION_INSTALL_PATH") ?? string.Empty;
 
     public static string ResolveGitHubAccessToken()
-        => ResolveFirstNonEmpty(
+    {
+        if (!string.IsNullOrWhiteSpace(_cachedGitHubAccessToken))
+        {
+            return _cachedGitHubAccessToken;
+        }
+
+        var configured = ResolveFirstNonEmpty(
             defaultValue: null,
             "FLEETMANAGER_GITHUB_TOKEN",
             "GH_TOKEN",
-            "GITHUB_TOKEN") ?? string.Empty;
+            "GITHUB_TOKEN");
+
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            _cachedGitHubAccessToken = configured.Trim();
+            return _cachedGitHubAccessToken;
+        }
+
+        _cachedGitHubAccessToken = TryResolveGitHubAccessTokenFromCredentialManager();
+        return _cachedGitHubAccessToken ?? string.Empty;
+    }
 
     public static bool ShouldPersistSshCredentials()
     {
@@ -180,5 +199,61 @@ internal static class DesktopEnvironment
         }
 
         return defaultValue ?? string.Empty;
+    }
+
+    private static string? TryResolveGitHubAccessTokenFromCredentialManager()
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "git",
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.StartInfo.ArgumentList.Add("credential-manager");
+            process.StartInfo.ArgumentList.Add("get");
+            process.StartInfo.ArgumentList.Add("--no-ui");
+
+            process.Start();
+            process.StandardInput.Write("protocol=https\nhost=github.com\n\n");
+            process.StandardInput.Close();
+
+            var stdout = process.StandardOutput.ReadToEnd();
+            var stderr = process.StandardError.ReadToEnd();
+
+            if (!process.WaitForExit(5000) || process.ExitCode != 0)
+            {
+                return null;
+            }
+
+            foreach (var line in stdout.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!line.StartsWith("password=", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var token = line["password=".Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    return token;
+                }
+            }
+
+            _ = stderr;
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
