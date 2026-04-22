@@ -1,9 +1,9 @@
 namespace FleetManager.Desktop.Models;
 
-public sealed record PublishedBrowserExtensionRelease(
+public sealed record PreparedBrowserExtensionPackage(
     string DisplayName,
     string Version,
-    string BundleUrl,
-    string BundleSha256Url,
+    string SourcePath,
+    string BundleBase64,
     string BundleSha256,
     string InstallPath);

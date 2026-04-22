@@ -24,9 +24,16 @@ INSTALL_PATH="$(json_get installPath)"
 RESTART_DELAY_SECONDS="$(json_get restartDelaySeconds)"
 DISPLAY_NAME="$(json_get displayName)"
 VERSION_NAME="$(json_get version)"
+INLINE_BUNDLE_PRESENT="$(python3 - "$PAYLOAD_FILE" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+print("1" if data.get("bundleBase64") else "0")
+PY
+)"
 
-if [[ -z "$BUNDLE_URL" ]]; then
-  echo "bundleUrl is required." >&2
+if [[ "$INLINE_BUNDLE_PRESENT" != "1" && -z "$BUNDLE_URL" ]]; then
+  echo "Either bundleBase64 or bundleUrl is required." >&2
   exit 1
 fi
 
@@ -55,7 +62,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-curl -fL "$BUNDLE_URL" -o "$BUNDLE_PATH"
+if [[ "$INLINE_BUNDLE_PRESENT" == "1" ]]; then
+  python3 - "$PAYLOAD_FILE" "$BUNDLE_PATH" <<'PY'
+import base64, json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as fh:
+    data = json.load(fh)
+bundle = data.get("bundleBase64", "")
+if not bundle:
+    raise SystemExit("bundleBase64 is required.")
+with open(sys.argv[2], 'wb') as fh:
+    fh.write(base64.b64decode(bundle))
+PY
+else
+  curl -fL "$BUNDLE_URL" -o "$BUNDLE_PATH"
+fi
 
 if [[ -n "$BUNDLE_SHA256" ]]; then
   printf '%s  %s\n' "$BUNDLE_SHA256" "$BUNDLE_PATH" | sha256sum -c -

@@ -816,7 +816,7 @@
                                     <Border Grid.Column="0" Style="{StaticResource PanelStyle}" Margin="0">
                                         <StackPanel>
                                             <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Managed Browser Extension" />
-                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="Publish a local extension path or zip to GitHub Releases, then roll it out to every VPS connected to this fleet." />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="Send a local extension folder, manifest.json, or zip directly from this desktop to every VPS connected to this fleet." />
 
                                             <Border Margin="0,18,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
                                                 <StackPanel>
@@ -834,16 +834,15 @@
                                                     </Border>
                                                     <WrapPanel Margin="0,12,0,0" Orientation="Horizontal">
                                                         <Button Margin="0,0,8,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="BrowseBrowserExtensionSource_Click" Content="Browse File" />
-                                                        <Button Margin="0,0,8,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="PublishAndDeployBrowserExtension_Click" Content="Publish + Deploy Fleet" />
-                                                        <Button Margin="0,0,0,8" Style="{StaticResource GhostButtonStyle}" Height="36" Click="DeployLatestBrowserExtension_Click" Content="Deploy Latest GitHub" />
+                                                        <Button Margin="0,0,0,8" Style="{StaticResource PrimaryButtonStyle}" Height="36" Click="UploadAndDeployBrowserExtension_Click" Content="Upload + Deploy Fleet" />
                                                     </WrapPanel>
                                                 </StackPanel>
                                             </Border>
 
                                             <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
                                                 <StackPanel>
-                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="LATEST GITHUB RELEASE URL" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionReleaseUrlLabel}" />
+                                                    <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="SAVED LOCAL SOURCE" />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="12" FontFamily="Consolas" TextWrapping="Wrap" Text="{Binding BrowserExtensionSourceSummaryLabel}" />
                                                 </StackPanel>
                                             </Border>
 
@@ -859,13 +858,13 @@
                                     <Border Grid.Column="2" Style="{StaticResource PanelStyle}" Margin="0">
                                         <StackPanel>
                                             <TextBlock Foreground="#F8F5F1" FontSize="17" FontWeight="Bold" Text="Fleet Rollout" />
-                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="This page is dedicated to extension rollout only. Use it whenever you want to publish, update, or redeploy the managed browser extension." />
+                                            <TextBlock Margin="0,6,0,0" Foreground="#B9C4CD" TextWrapping="Wrap" Text="This page is dedicated to extension rollout only. Use it whenever you want to upload, update, or redeploy the managed browser extension." />
 
                                             <Border Margin="0,18,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
                                                 <StackPanel>
                                                     <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="CONNECTED VPS NODES" />
                                                     <TextBlock Margin="0,8,0,0" Foreground="#F8F5F1" FontSize="20" FontWeight="Bold" Text="{Binding ConnectedNodesSummary}" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Any VPS added after this will also try to receive the latest published extension automatically." />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="Any VPS added after this will also try to receive the saved local extension automatically while the source path still exists on this desktop." />
                                                 </StackPanel>
                                             </Border>
 
@@ -879,8 +878,8 @@
                                             <Border Margin="0,10,0,0" Padding="14" Background="#1A2A35" BorderBrush="#2C3A43" BorderThickness="1" CornerRadius="14">
                                                 <StackPanel>
                                                     <TextBlock Foreground="#47C1A8" FontSize="11" FontWeight="SemiBold" Text="ROLL OUT NOTES" />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="GitHub publishing from this page requires FLEETMANAGER_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN on this desktop." />
-                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="The VPS nodes do not read the extension from your PC. They always download the managed bundle from GitHub Releases." />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="This page sends the extension bundle directly from this desktop through the FleetManager API and worker command channel." />
+                                                    <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="No GitHub token or release publishing is required for extension rollout anymore." />
                                                     <TextBlock Margin="0,8,0,0" Foreground="#B9C4CD" FontSize="12" TextWrapping="Wrap" Text="If the current API host is still legacy, run Self Update Stack once after saving SSH credentials in Node Registry." />
                                                 </StackPanel>
                                             </Border>

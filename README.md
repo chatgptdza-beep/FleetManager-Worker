@@ -103,12 +103,7 @@ $env:FLEETMANAGER_API_BUNDLE_RELEASE_TAG = "api-bundle-latest"
 $env:FLEETMANAGER_API_BUNDLE_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip"
 $env:FLEETMANAGER_API_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/api-bundle-latest/fleetmanager-api-bundle-linux-x64.zip.sha256"
 $env:FLEETMANAGER_API_BUNDLE_SHA256 = "<optional literal sha256 override>"
-$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_RELEASE_TAG = "browser-extension-latest"
-$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_URL = "https://github.com/owner/repo/releases/download/browser-extension-latest/fleetmanager-browser-extension-bundle.zip"
-$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256_URL = "https://github.com/owner/repo/releases/download/browser-extension-latest/fleetmanager-browser-extension-bundle.zip.sha256"
-$env:FLEETMANAGER_BROWSER_EXTENSION_BUNDLE_SHA256 = "<optional literal sha256 override>"
 $env:FLEETMANAGER_BROWSER_EXTENSION_INSTALL_PATH = "/opt/fleetmanager-agent/extensions/fleet-managed-extension"
-$env:FLEETMANAGER_GITHUB_TOKEN = "<token with repo contents:write>"
 ```
 
 If `FLEETMANAGER_AGENT_BUNDLE_PATH` is set, the Desktop uploads that file directly and skips the GitHub download path.
@@ -119,19 +114,19 @@ The selected node now exposes `Self Update Stack` in the Desktop UI. The command
 
 ## Managed Browser Extension Rollout
 
-The Desktop now supports a GitHub-backed managed browser extension pipeline:
+The Desktop now supports direct managed browser extension rollout from the local PC:
 
-1. Paste a local unpacked extension folder path, a `manifest.json` path, or a `.zip` package into `System Settings`.
-2. Click `Publish + Deploy Fleet`.
-3. The Desktop normalizes the extension, uploads `fleetmanager-browser-extension-bundle.zip` plus its `.sha256` file to the stable GitHub Release tag `browser-extension-latest`, and then dispatches `UpdateBrowserExtensions` to every VPS currently visible in the fleet.
-4. Each worker downloads the published bundle from GitHub Releases directly on the VPS, verifies the checksum, installs it into `/opt/fleetmanager-agent/extensions/fleet-managed-extension`, and rewrites `Agent.BrowserExtensions` plus the systemd `FM_BROWSER_EXTENSIONS` override.
-5. Any VPS added later will automatically receive the latest published managed extension after its first heartbeat.
+1. Open `Extension Manager`.
+2. Paste a local unpacked extension folder path, a `manifest.json` path, or a `.zip` package.
+3. Click `Upload + Deploy Fleet`.
+4. The Desktop normalizes the extension, base64-encodes the bundle, and dispatches `UpdateBrowserExtensions` directly through the FleetManager API to every VPS currently visible in the fleet.
+5. Each worker decodes the received bundle locally on the VPS, verifies the checksum, installs it into `/opt/fleetmanager-agent/extensions/fleet-managed-extension`, and rewrites `Agent.BrowserExtensions` plus the systemd `FM_BROWSER_EXTENSIONS` override.
+6. Any VPS added later will automatically receive the same managed extension after its first heartbeat, as long as the saved local source path still exists on the Desktop PC.
 
 Notes:
 
-- Publishing from the Desktop requires `FLEETMANAGER_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`.
-- Deployment from the VPS does not use your desktop file system. Nodes always download the managed extension from GitHub Releases.
-- `Deploy Latest GitHub` skips local publishing and only rolls out the already-published GitHub Release asset to the fleet.
+- No GitHub token or release publishing is required for extension rollout.
+- The extension payload is sent directly from the Desktop to the worker command channel.
 - If the current API host is still on a legacy build, save its SSH credentials in `Node Registry` once and rerun the rollout. The Desktop will bootstrap that API host automatically before retrying.
 
 Manual publish example:
@@ -215,9 +210,8 @@ The older `scripts/setup-vps-extension-and-launcher-bridge.ps1` flow is still pr
 The professional path is now:
 
 - local extension path or zip on the Desktop
-- publish to GitHub Release `browser-extension-latest`
 - dispatch `UpdateBrowserExtensions`
-- each VPS downloads and installs the extension directly from GitHub Releases
+- each VPS installs the extension from the bundle pushed directly by the Desktop
 
 ## Capacity Notes (50 Browsers)
 

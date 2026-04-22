@@ -644,7 +644,7 @@ public partial class MainWindow : Window
         {
             Filter = "Extension package (*.zip)|*.zip|Extension manifest (manifest.json)|manifest.json|All files (*.*)|*.*",
             CheckFileExists = true,
-            Title = "Select extension zip or manifest.json"
+            Title = "Select extension zip or manifest.json (or paste a folder path manually)"
         };
 
         if (dialog.ShowDialog() == true)
@@ -653,26 +653,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void PublishAndDeployBrowserExtension_Click(object sender, RoutedEventArgs e)
+    private async void UploadAndDeployBrowserExtension_Click(object sender, RoutedEventArgs e)
     {
         await RunProgressConsoleActionAsync(
             "Browser Extension Rollout",
-            "Publishing + deploying managed browser extension...",
+            "Uploading + deploying managed browser extension...",
             "Managed Browser Extension Deployed",
-            "GitHub Release updated and fleet rollout completed.",
+            "Local extension upload and fleet rollout completed.",
             "Browser Extension Rollout Failed",
-            (progress, cancellationToken) => _viewModel.PublishAndDeployBrowserExtensionAsync(progress, cancellationToken));
-    }
-
-    private async void DeployLatestBrowserExtension_Click(object sender, RoutedEventArgs e)
-    {
-        await RunProgressConsoleActionAsync(
-            "Browser Extension Rollout",
-            "Deploying latest managed browser extension...",
-            "Managed Browser Extension Deployed",
-            "GitHub Release rollout completed.",
-            "Browser Extension Rollout Failed",
-            (progress, cancellationToken) => _viewModel.DeployLatestBrowserExtensionAsync(progress, cancellationToken));
+            (progress, cancellationToken) => _viewModel.UploadAndDeployBrowserExtensionAsync(progress, cancellationToken));
     }
 
     private async Task RunUiActionAsync(Func<Task> action)
