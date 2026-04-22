@@ -39,5 +39,7 @@ public interface IDesktopNodeRegistry
     /// </summary>
     Task<bool> RemoveByWorkflowNodeIdAsync(Guid workflowNodeId, CancellationToken cancellationToken = default);
 
+    bool HasUsableCredentials(DesktopManagedNodeRecord node);
+
     CreateNodeRequest BuildConnectionRequest(DesktopManagedNodeRecord node);
 }

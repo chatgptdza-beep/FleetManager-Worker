@@ -16,6 +16,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
     };
 
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private readonly Dictionary<Guid, SessionCredentials> _sessionCredentials = new();
 
     private static string RegistryFilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -75,6 +76,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
+            _sessionCredentials.Clear();
             if (File.Exists(RegistryFilePath))
             {
                 File.Delete(RegistryFilePath);
@@ -101,6 +103,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
 
             ApplyRemoteNode(managedNode, remoteNode, apiBaseUrl);
             ApplyConnectionRequest(managedNode, request);
+            CacheSessionCredentials(managedNode.WorkflowNodeId, request.SshPassword, request.SshPrivateKey);
             managedNode.Status = DesktopManagedNodeStatus.Installing;
             managedNode.StatusMessage = "Desktop registered the node and queued it for healing/provisioning.";
             managedNode.LastHealthCheckAtUtc = DateTime.UtcNow;
@@ -198,6 +201,11 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
             var removed = snapshot.Nodes.RemoveAll(node => node.RemoteNodeId == remoteNodeId) > 0;
             if (removed)
             {
+                var remainingWorkflowNodeIds = snapshot.Nodes.Select(node => node.WorkflowNodeId).ToHashSet();
+                foreach (var workflowNodeId in _sessionCredentials.Keys.Where(id => !remainingWorkflowNodeIds.Contains(id)).ToList())
+                {
+                    _sessionCredentials.Remove(workflowNodeId);
+                }
                 await SaveSnapshotUnsafeAsync(snapshot, cancellationToken);
             }
 
@@ -270,6 +278,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
             node.ControlPort = controlPort;
             node.Region = string.IsNullOrWhiteSpace(region) ? null : region.Trim();
             ApplyStoredCredentials(node, sshPassword, sshPrivateKey);
+            CacheSessionCredentials(node.WorkflowNodeId, sshPassword, sshPrivateKey);
 
             await SaveSnapshotUnsafeAsync(snapshot, cancellationToken);
             return Clone(node);
@@ -289,6 +298,7 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
             var removed = snapshot.Nodes.RemoveAll(node => node.WorkflowNodeId == workflowNodeId) > 0;
             if (removed)
             {
+                _sessionCredentials.Remove(workflowNodeId);
                 await SaveSnapshotUnsafeAsync(snapshot, cancellationToken);
             }
 
@@ -300,11 +310,27 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         }
     }
 
+    public bool HasUsableCredentials(DesktopManagedNodeRecord node)
+        => node.HasStoredCredentials
+           || (_sessionCredentials.TryGetValue(node.WorkflowNodeId, out var session)
+               && (!string.IsNullOrWhiteSpace(session.SshPassword) || !string.IsNullOrWhiteSpace(session.SshPrivateKey)));
+
     public CreateNodeRequest BuildConnectionRequest(DesktopManagedNodeRecord node)
     {
-        if (!node.HasStoredCredentials)
+        var sshPassword = DesktopCredentialProtector.Unprotect(node.EncryptedSshPassword);
+        var sshPrivateKey = DesktopCredentialProtector.Unprotect(node.EncryptedSshPrivateKey);
+
+        if (string.IsNullOrWhiteSpace(sshPassword)
+            && string.IsNullOrWhiteSpace(sshPrivateKey)
+            && _sessionCredentials.TryGetValue(node.WorkflowNodeId, out var session))
         {
-            throw new InvalidOperationException($"Node '{node.Name}' does not have stored SSH credentials in the desktop registry.");
+            sshPassword = session.SshPassword;
+            sshPrivateKey = session.SshPrivateKey;
+        }
+
+        if (string.IsNullOrWhiteSpace(sshPassword) && string.IsNullOrWhiteSpace(sshPrivateKey))
+        {
+            throw new InvalidOperationException($"Node '{node.Name}' does not have stored or in-session SSH credentials in the desktop registry.");
         }
 
         return new CreateNodeRequest
@@ -314,8 +340,8 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
             SshPort = node.SshPort,
             ControlPort = node.ControlPort,
             SshUsername = node.SshUsername,
-            SshPassword = DesktopCredentialProtector.Unprotect(node.EncryptedSshPassword),
-            SshPrivateKey = DesktopCredentialProtector.Unprotect(node.EncryptedSshPrivateKey),
+            SshPassword = sshPassword,
+            SshPrivateKey = sshPrivateKey,
             AuthType = node.AuthType,
             OsType = node.OsType,
             Region = node.Region
@@ -369,6 +395,16 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
 
         target.EncryptedSshPassword = DesktopCredentialProtector.Protect(sshPassword);
         target.EncryptedSshPrivateKey = DesktopCredentialProtector.Protect(sshPrivateKey);
+    }
+
+    private void CacheSessionCredentials(Guid workflowNodeId, string? sshPassword, string? sshPrivateKey)
+    {
+        if (string.IsNullOrWhiteSpace(sshPassword) && string.IsNullOrWhiteSpace(sshPrivateKey))
+        {
+            return;
+        }
+
+        _sessionCredentials[workflowNodeId] = new SessionCredentials(sshPassword, sshPrivateKey);
     }
 
     private static void Upsert(List<DesktopManagedNodeRecord> nodes, DesktopManagedNodeRecord candidate)
@@ -470,4 +506,6 @@ public sealed class DesktopNodeRegistry : IDesktopNodeRegistry
         var json = JsonSerializer.Serialize(snapshot, JsonOptions);
         await File.WriteAllTextAsync(RegistryFilePath, json, cancellationToken);
     }
+
+    private sealed record SessionCredentials(string? SshPassword, string? SshPrivateKey);
 }

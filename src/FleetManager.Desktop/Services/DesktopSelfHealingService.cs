@@ -157,7 +157,7 @@ public sealed class DesktopSelfHealingService(
                 var remoteWorkerStatus = await ProbeRemoteWorkerHeartbeatAsync(node.RemoteNodeId.Value, checkedAtUtc, cancellationToken);
                 if (!remoteWorkerStatus.CanVerify || remoteWorkerStatus.IsHealthy)
                 {
-                    if (node.HasStoredCredentials
+                    if (nodeRegistry.HasUsableCredentials(node)
                         && node.LocalPort > 0
                         && tunnelManager.GetTunnelState(node.WorkflowNodeId) != TunnelState.Connected)
                     {
@@ -180,7 +180,7 @@ public sealed class DesktopSelfHealingService(
             }
             else
             {
-                if (node.HasStoredCredentials
+                if (nodeRegistry.HasUsableCredentials(node)
                     && node.LocalPort > 0
                     && tunnelManager.GetTunnelState(node.WorkflowNodeId) != TunnelState.Connected)
                 {

@@ -660,8 +660,8 @@ public sealed class MainWindowViewModel : ViewModelBase
 
                 throw new InvalidOperationException(
                     "This VPS hosts the current FleetManager API and is still on a legacy build that predates stack self-update. " +
-                    "No SSH credentials are stored locally, so the desktop cannot bootstrap it automatically. " +
-                    "Open Node Registry, save the SSH password or key for this VPS once, then run Self Update Stack again.");
+                    "No stored or in-session SSH credentials are available, so the desktop cannot bootstrap it automatically. " +
+                    "If this VPS was added in an earlier session, open Node Registry, re-enter the SSH password or key once, then run Self Update Stack again.");
             }
 
             try
@@ -781,7 +781,7 @@ public sealed class MainWindowViewModel : ViewModelBase
 
                 throw new InvalidOperationException(
                     "The current FleetManager API host is still on a legacy build and does not expose UpdateBrowserExtensions yet. " +
-                    "Save SSH credentials for the API VPS in Node Registry and run Self Update Stack once, then retry the direct managed browser extension rollout.");
+                    "If this VPS was added in an earlier session, re-enter its SSH password or key in Node Registry and run Self Update Stack once, then retry the direct managed browser extension rollout.");
             }
         }
 
@@ -1861,7 +1861,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         CancellationToken cancellationToken = default)
     {
         var managedNode = await _nodeRegistry.GetByRemoteNodeIdAsync(node.NodeId);
-        if (managedNode is null || !managedNode.HasStoredCredentials)
+        if (managedNode is null || !_nodeRegistry.HasUsableCredentials(managedNode))
         {
             return false;
         }
